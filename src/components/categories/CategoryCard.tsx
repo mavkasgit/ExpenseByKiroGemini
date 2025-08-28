@@ -15,7 +15,7 @@ interface CategoryCardProps {
   isDraggable?: boolean
 }
 
-const iconMap: Record<string, string> = {
+export const iconMap: Record<string, string> = {
   'shopping-bag': '🛍️',
   'car': '🚗',
   'home': '🏠',

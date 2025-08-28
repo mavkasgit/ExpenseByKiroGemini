@@ -1,10 +1,11 @@
 'use server'
 
+import { extractKeywords } from '../utils/keywords';
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
 import { expenseSchema, updateExpenseSchema } from '@/lib/validations/expenses'
 import { categorizeExpense } from '@/lib/actions/keywords'
-import type { CreateExpenseData } from '@/types'
+import type { CreateExpenseData, UncategorizedExpenseWithKeywords } from '@/types'
 import type { UpdateExpenseData } from '@/lib/validations/expenses'
 
 export async function createExpense(data: CreateExpenseData) {
@@ -210,7 +211,7 @@ export async function getExpenses(filters?: {
       .select(`
         *,
         category:categories(*)
-      `)
+      `, { count: 'exact' })
       .eq('user_id', user.id)
 
     // Применяем фильтры
@@ -240,17 +241,17 @@ export async function getExpenses(filters?: {
     }
 
     if (filters?.offset) {
-      query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
+      query = query.range(filters.offset, filters.offset + (filters.limit || 100) - 1)
     }
 
-    const { data: expenses, error } = await query
+    const { data: expenses, error, count } = await query
 
     if (error) {
       console.error('Ошибка получения расходов:', error)
       return { error: 'Не удалось загрузить расходы' }
     }
 
-    return { success: true, data: expenses || [] }
+    return { success: true, data: expenses || [], count: count || 0 }
   } catch (err) {
     console.error('Ошибка получения расходов:', err)
     return { error: 'Произошла ошибка при загрузке' }
@@ -549,5 +550,39 @@ export async function deleteAllExpenses() {
   } catch (err) {
     console.error('Ошибка удаления всех расходов:', err)
     return { error: 'Произошла ошибка при удалении расходов' }
+  }
+}
+
+export async function getUncategorizedExpensesWithKeywords() {
+  const supabase = await createServerClient();
+
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' };
+    }
+
+    const { data: expenses, error: expensesError } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'uncategorized')
+      .order('expense_date', { ascending: false });
+
+    if (expensesError) {
+      console.error('Ошибка получения неопознанных расходов:', expensesError);
+      return { error: 'Не удалось загрузить неопознанные расходы' };
+    }
+
+    const result: UncategorizedExpenseWithKeywords[] = expenses.map(expense => ({
+      ...expense,
+      suggested_keywords: extractKeywords(expense.description || ''),
+    }));
+
+    return { success: true, data: result };
+
+  } catch (err) {
+    console.error('Ошибка получения неопознанных расходов:', err);
+    return { error: 'Произошла ошибка при загрузке' };
   }
 }

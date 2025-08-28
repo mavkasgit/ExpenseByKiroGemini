@@ -279,12 +279,17 @@ export async function assignCategoryToKeyword(data: AssignKeywordData) {
       .eq('user_id', user.id)
 
     // Перекатегоризируем все неопознанные траты с этим ключевым словом
-    await recategorizeExpensesByKeyword(validatedData.keyword, validatedData.category_id)
+
+    const recategorizeResult = await recategorizeExpensesByKeyword(validatedData.keyword, validatedData.category_id)
 
     revalidatePath('/categories')
     revalidatePath('/expenses')
     
-    return { success: true, data: keyword }
+    return { 
+      success: true, 
+      data: keyword,
+      recategorizedCount: recategorizeResult.recategorized || 0
+    }
   } catch (err) {
     console.error('Ошибка валидации назначения ключевого слова:', err)
     return { error: 'Неверные данные' }
@@ -511,6 +516,10 @@ async function recategorizeExpensesByKeyword(keyword: string, categoryId: string
     console.error('Ошибка перекатегоризации:', error)
     return { error: 'Не удалось перекатегоризировать траты' }
   }
+}
+
+export async function assignKeywordToCategory(keyword: string, categoryId: string) {
+  return assignCategoryToKeyword({ keyword, category_id: categoryId });
 }
 
 // Удаление неопознанного ключевого слова
