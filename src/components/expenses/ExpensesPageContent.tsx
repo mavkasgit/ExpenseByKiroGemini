@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
-import { UnrecognizedKeywordsSection } from './UnrecognizedKeywordsSection'
+import { UncategorizedSection } from './UncategorizedSection'
 import { ExpenseEditModal } from './ExpenseEditModal'
 import { InlineNotesEditor } from './InlineNotesEditor'
 import { formatAmount } from '@/lib/utils/formatNumber'
@@ -16,15 +18,19 @@ import Link from 'next/link'
 
 interface ExpensesPageContentProps {
   initialExpenses: ExpenseWithCategory[]
+  totalCount: number
   categories: Category[]
   error?: string
 }
 
 export function ExpensesPageContent({ 
   initialExpenses, 
+  totalCount,
   categories, 
   error 
 }: ExpensesPageContentProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [showUnrecognizedKeywords, setShowUnrecognizedKeywords] = useState(true)
   const [hideUncategorized, setHideUncategorized] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ExpenseWithCategory | null>(null)
@@ -32,6 +38,14 @@ export function ExpensesPageContent({
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { showToast } = useToast()
+
+  const limit = searchParams.get('limit') || '100'
+
+  const handleLimitChange = (newLimit: string) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('limit', newLimit)
+    router.push(`/expenses?${params.toString()}`)
+  }
 
   if (error) {
     return (
@@ -79,7 +93,7 @@ export function ExpensesPageContent({
     }
   }
 
-  if (expenses.length === 0) {
+  if (totalCount === 0) {
     return (
       <Card className="p-8 text-center">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
@@ -115,17 +129,18 @@ export function ExpensesPageContent({
   return (
     <>
       {/* Секция неопознанных ключевых слов */}
-      <UnrecognizedKeywordsSection
+      <UncategorizedSection
         categories={categories}
         isVisible={showUnrecognizedKeywords}
         onToggleVisibility={() => setShowUnrecognizedKeywords(!showUnrecognizedKeywords)}
+        onExpensesCategorized={() => router.refresh()}
       />
 
       {/* Фильтры и действия */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <h2 className="text-lg font-semibold text-gray-900">
-            Все расходы ({filteredExpenses.length})
+            Все расходы ({filteredExpenses.length} из {totalCount})
           </h2>
           {uncategorizedCount > 0 && (
             <div className="flex items-center space-x-2">
@@ -144,7 +159,20 @@ export function ExpensesPageContent({
           )}
         </div>
         
-        <div className="flex space-x-2">
+        <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
+            <label htmlFor="limit-select" className="text-sm text-gray-700">Показывать по:</label>
+            <select 
+              id="limit-select"
+              value={limit}
+              onChange={(e) => handleLimitChange(e.target.value)}
+              className="bg-white border border-gray-300 rounded-md shadow-sm pl-3 pr-10 py-2 text-left cursor-default focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
           <Link href="/expenses/add">
             <Button>Добавить расход</Button>
           </Link>
@@ -261,7 +289,7 @@ export function ExpensesPageContent({
           </Card>
         )}
         
-        {filteredExpenses.length >= 50 && (
+        {filteredExpenses.length < totalCount && (
           <div className="text-center pt-4">
             <Button variant="outline">
               Загрузить еще

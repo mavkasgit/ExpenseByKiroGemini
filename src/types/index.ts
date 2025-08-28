@@ -200,7 +200,9 @@ export type Database = {
 }
 
 // Application types
-export type Category = Database['public']['Tables']['categories']['Row']
+export type Category = Database['public']['Tables']['categories']['Row'] & {
+  image_url?: string;
+}
 export type CategoryGroup = Database['public']['Tables']['category_groups']['Row']
 export type Expense = Database['public']['Tables']['expenses']['Row']
 
@@ -295,11 +297,6 @@ export type CategorizationResult = {
 
 export type UncategorizedExpenseWithKeywords = Expense & {
   suggested_keywords: string[]
-  potential_categories: Array<{
-    category: Category
-    confidence: number
-    matched_keywords: string[]
-  }>
 }
 
 // Keyword management types
