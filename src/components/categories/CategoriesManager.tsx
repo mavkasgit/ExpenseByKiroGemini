@@ -36,6 +36,7 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
   const [showBulkActions, setShowBulkActions] = useState(false)
   const [showStandardModal, setShowStandardModal] = useState(false)
   const [showGroupsModal, setShowGroupsModal] = useState(false)
+  const [groupSummary, setGroupSummary] = useState<Record<string, number>>({});
   const bulkActionsRef = useRef<HTMLDivElement>(null)
   const toast = useToast()
 
@@ -68,12 +69,12 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
 
   // Группируем категории по group_name
   const groupedCategories = categories.reduce((groups, category) => {
-    const groupName = category.group_name || 'Основные'
-    if (!groups[groupName]) {
-      groups[groupName] = []
+    const groupId = category.category_group_id || 'unassigned';
+    if (!groups[groupId]) {
+      groups[groupId] = [];
     }
-    groups[groupName].push(category)
-    return groups
+    groups[groupId].push(category);
+    return groups;
   }, {} as Record<string, Category[]>)
 
   // Добавляем все группы из category_groups (включая пустые)
@@ -215,9 +216,10 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
     // Если перетаскиваем на группу
     if (overId.startsWith('group-')) {
       const newGroupName = overId.replace('group-', '')
+      const newGroupId = overId.startsWith('group-') ? overId.replace('group-', '') : null;
       const category = categories.find(cat => cat.id === activeId)
       
-      if (category && category.group_name !== newGroupName) {
+      if (category && category.category_group_id !== newGroupId) {
         // Оптимистично обновляем UI
         setCategories(prev => prev.map(cat => 
           cat.id === activeId 
@@ -232,7 +234,7 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
             // Откатываем изменения при ошибке
             setCategories(prev => prev.map(cat => 
               cat.id === activeId 
-                ? { ...cat, group_name: category.group_name }
+                ? { ...cat, category_group_id: category.category_group_id }
                 : cat
             ))
             toast.error(result.error)
@@ -243,7 +245,7 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
           // Откатываем изменения при ошибке
           setCategories(prev => prev.map(cat => 
             cat.id === activeId 
-              ? { ...cat, group_name: category.group_name }
+              ? { ...cat, category_group_id: category.category_group_id }
               : cat
           ))
           toast.error('Произошла ошибка при перемещении категории')
@@ -415,7 +417,9 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
                 // Затем по алфавиту
                 return a.localeCompare(b)
               })
-              .map(([groupName, groupCategories]) => {
+              .map(([groupId, groupCategories]) => {
+                const group = categoryGroups.find(g => g.id === groupId);
+                const groupName = groupId === 'unassigned' ? 'Без группы' : group?.name || 'Неизвестная группа';
                 // Вычисляем высоту на основе количества категорий
                 const minHeight =
                   groupCategories.length === 0
@@ -453,6 +457,11 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
                             <span className="text-sm text-gray-500">
                               ({groupCategories.length})
                             </span>
+                            {groupSummary[groupId] && (
+                              <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
+                                {new Intl.NumberFormat('ru-RU').format(groupSummary[groupId])} ₽
+                              </span>
+                            )}
                           </div>
                         )
                       })()}
@@ -462,13 +471,13 @@ export function CategoriesManager({ initialCategories, initialGroups = [] }: Cat
                     <div
                       className="p-3 border-2 border-dashed border-gray-200 rounded-lg transition-colors hover:border-gray-300 bg-gray-50"
                       style={{ minHeight: `${minHeight}px` }}
-                      onDrop={(e) => {
+                                              onDrop={(e) => {
                         e.preventDefault();
                         const categoryId = e.dataTransfer.getData("text/plain");
                         if (categoryId) {
                           handleDragEnd({
                             active: { id: categoryId },
-                            over: { id: `group-${groupName}` },
+                            over: { id: `group-${groupId}` },
                           } as any);
                         }
                       }}

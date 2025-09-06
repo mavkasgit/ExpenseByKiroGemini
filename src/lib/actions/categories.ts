@@ -66,7 +66,7 @@ export async function updateCategory(id: string, data: Partial<CreateCategoryDat
         name: validatedData.name,
         color: validatedData.color,
         icon: validatedData.icon,
-        group_name: validatedData.group_name,
+        category_group_id: validatedData.category_group_id,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -193,9 +193,15 @@ export async function createDefaultCategories() {
       console.log(`✅ Groups created/updated: ${groupsResult.data?.length || 0}`)
     }
 
-    const existingNames = new Set(existingCategoriesResult.data?.map(cat => cat.name) || [])
+    // Получаем ID групп, чтобы связать с категориями
+    const { data: groups } = await supabase
+      .from('category_groups')
+      .select('id, name')
+      .eq('user_id', user.id)
 
-    // Стандартные категории с иконками, цветами и группами
+    const groupNameToIdMap = new Map(groups?.map(g => [g.name, g.id]) || [])
+
+    // Стандартные категории с иконками, цветами и привязкой к имени группы
     const defaultCategories = [
       { name: 'Продукты', icon: 'shopping-bag', color: '#10b981', group_name: 'Еда и напитки' },
       { name: 'Транспорт', icon: 'car', color: '#3b82f6', group_name: 'Транспорт' },
@@ -222,6 +228,9 @@ export async function createDefaultCategories() {
       { name: 'Все для дома', icon: 'home', color: '#10b981', group_name: 'Дом и быт' }
     ]
 
+    const { data: existingCategoriesData } = await supabase.from('categories').select('name').eq('user_id', user.id);
+    const existingNames = new Set(existingCategoriesData?.map(c => c.name) || []);
+
     // Фильтруем категории, которых еще нет у пользователя
     const newCategories = defaultCategories.filter(category => !existingNames.has(category.name))
 
@@ -235,7 +244,7 @@ export async function createDefaultCategories() {
       name: category.name,
       icon: category.icon,
       color: category.color,
-      group_name: category.group_name
+      category_group_id: groupNameToIdMap.get(category.group_name) || null
     }))
 
     // Используем upsert для быстрой вставки без проверки дубликатов
@@ -409,6 +418,44 @@ export async function getCategoriesWithGroups() {
   }
 }
 
+export async function getGroupExpenseSummary() {
+  const supabase = await createServerClient();
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' };
+    }
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .select(`
+        amount,
+        categories ( category_group_id )
+      `)
+      .eq('user_id', user.id)
+      .not('category_id', 'is', null);
+
+    if (error) {
+      console.error('Ошибка получения сводки по группам:', error);
+      return { error: 'Не удалось рассчитать сводку' };
+    }
+
+    const summary = data.reduce((acc, expense) => {
+      const groupId = (expense.categories as any)?.category_group_id;
+      if (groupId) {
+        acc[groupId] = (acc[groupId] || 0) + expense.amount;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    return { success: true, data: summary };
+
+  } catch (err) {
+    console.error('Ошибка получения сводки по группам:', err);
+    return { error: 'Произошла ошибка' };
+  }
+}
+
 export async function deleteAllCategories() {
   const supabase = await createServerClient()
 
@@ -532,7 +579,7 @@ export async function resetToDefaultCategories() {
   }
 }
 
-export async function moveCategoryToGroup(categoryId: string, newGroupName: string) {
+export async function moveCategoryToGroup(categoryId: string, newGroupId: string | null) {
   const supabase = await createServerClient()
 
   try {
@@ -547,7 +594,7 @@ export async function moveCategoryToGroup(categoryId: string, newGroupName: stri
     const { data: category, error } = await supabase
       .from('categories')
       .update({
-        group_name: newGroupName,
+        category_group_id: newGroupId,
         updated_at: new Date().toISOString()
       })
       .eq('id', categoryId)
@@ -565,6 +612,38 @@ export async function moveCategoryToGroup(categoryId: string, newGroupName: stri
   } catch (err) {
     console.error('Ошибка обновления группы категории:', err)
     return { error: 'Произошла ошибка при обновлении группы' }
+  }
+}
+
+export async function updateGroupOrder(order: { id: string; sort_order: number }[]) {
+  const supabase = await createServerClient();
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { error: 'Пользователь не авторизован' };
+    }
+
+    const updates = order.map(item => 
+      supabase
+        .from('category_groups')
+        .update({ sort_order: item.sort_order, updated_at: new Date().toISOString() })
+        .eq('id', item.id)
+        .eq('user_id', user.id)
+    );
+
+    const results = await Promise.all(updates);
+    const firstError = results.find(res => res.error);
+
+    if (firstError && firstError.error) {
+      console.error('Ошибка обновления порядка групп:', firstError.error);
+      return { error: 'Не удалось обновить порядок групп' };
+    }
+
+    revalidatePath('/categories');
+    return { success: true };
+  } catch (err) {
+    console.error('Ошибка обновления порядка групп:', err);
+    return { error: 'Произошла ошибка при обновлении порядка' };
   }
 }
 
@@ -599,7 +678,7 @@ export async function getCategoryGroups() {
   }
 }
 
-export async function createCategoryGroup(data: { name: string; icon?: string; color?: string; description?: string }) {
+export async function createCategoryGroup(data: { name: string; icon?: string; color?: string; }) {
   const supabase = await createServerClient()
 
   try {
@@ -629,7 +708,6 @@ export async function createCategoryGroup(data: { name: string; icon?: string; c
         name: data.name.trim(),
         icon: data.icon || 'other',
         color: data.color || '#6366f1',
-        description: data.description || null,
         sort_order: nextSortOrder
       })
       .select()
@@ -651,7 +729,7 @@ export async function createCategoryGroup(data: { name: string; icon?: string; c
   }
 }
 
-export async function updateCategoryGroup(groupId: string, data: { name: string; icon?: string; color?: string; description?: string }) {
+export async function updateCategoryGroup(groupId: string, data: { name: string; icon?: string; color?: string; }) {
   const supabase = await createServerClient()
 
   try {
@@ -662,18 +740,6 @@ export async function updateCategoryGroup(groupId: string, data: { name: string;
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Получаем текущую группу для получения старого названия
-    const { data: currentGroup, error: getCurrentError } = await supabase
-      .from('category_groups')
-      .select('name')
-      .eq('id', groupId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (getCurrentError || !currentGroup) {
-      return { error: 'Группа не найдена' }
-    }
-
     // Обновляем группу
     const { data: updatedGroup, error: updateError } = await supabase
       .from('category_groups')
@@ -681,7 +747,6 @@ export async function updateCategoryGroup(groupId: string, data: { name: string;
         name: data.name.trim(),
         icon: data.icon,
         color: data.color,
-        description: data.description,
         updated_at: new Date().toISOString()
       })
       .eq('id', groupId)
@@ -695,18 +760,6 @@ export async function updateCategoryGroup(groupId: string, data: { name: string;
         return { error: 'Группа с таким названием уже существует' }
       }
       return { error: 'Не удалось обновить группу' }
-    }
-
-    // Если название изменилось, обновляем group_name во всех категориях
-    if (currentGroup.name !== data.name.trim()) {
-      await supabase
-        .from('categories')
-        .update({
-          group_name: data.name.trim(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('group_name', currentGroup.name)
-        .eq('user_id', user.id)
     }
 
     revalidatePath('/categories')
@@ -728,34 +781,11 @@ export async function deleteCategoryGroup(groupId: string) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Получаем группу для получения её названия
-    const { data: group, error: getGroupError } = await supabase
-      .from('category_groups')
-      .select('name')
-      .eq('id', groupId)
-      .eq('user_id', user.id)
-      .single()
+    // Опционально: можно оставить проверку, чтобы нельзя было удалить группу "Основные"
+    // Для этого нужно будет сначала получить группу по ID.
 
-    if (getGroupError || !group) {
-      return { error: 'Группа не найдена' }
-    }
-
-    // Проверяем, что это не группа "Основные" (её нельзя удалять)
-    if (group.name === 'Основные') {
-      return { error: 'Нельзя удалить группу "Основные"' }
-    }
-
-    // Перемещаем все категории из удаляемой группы в "Основные"
-    await supabase
-      .from('categories')
-      .update({
-        group_name: 'Основные',
-        updated_at: new Date().toISOString()
-      })
-      .eq('group_name', group.name)
-      .eq('user_id', user.id)
-
-    // Удаляем группу
+    // Просто удаляем группу. ON DELETE SET NULL в базе данных автоматически
+    // установит category_group_id = NULL для всех связанных категорий.
     const { error: deleteError } = await supabase
       .from('category_groups')
       .delete()
@@ -768,7 +798,7 @@ export async function deleteCategoryGroup(groupId: string) {
     }
 
     revalidatePath('/categories')
-    return { success: true, message: 'Группа удалена, категории перемещены в "Основные"' }
+    return { success: true, message: 'Группа удалена, категории перемещены в раздел "Без группы"' }
   } catch (err) {
     console.error('Ошибка удаления группы:', err)
     return { error: 'Произошла ошибка при удалении группы' }

@@ -19,7 +19,7 @@ export type Database = {
         Row: {
           color: string | null
           created_at: string | null
-          group_name: string | null
+          category_group_id: string | null
           icon: string | null
           id: string
           name: string
@@ -29,7 +29,7 @@ export type Database = {
         Insert: {
           color?: string | null
           created_at?: string | null
-          group_name?: string | null
+          category_group_id?: string | null
           icon?: string | null
           id?: string
           name: string
@@ -39,7 +39,7 @@ export type Database = {
         Update: {
           color?: string | null
           created_at?: string | null
-          group_name?: string | null
+          category_group_id?: string | null
           icon?: string | null
           id?: string
           name?: string
@@ -231,7 +231,7 @@ export type CreateCategoryData = {
   name: string
   color?: string
   icon?: string
-  group_name?: string
+  category_group_id?: string | null
 }
 
 // Bulk input types
