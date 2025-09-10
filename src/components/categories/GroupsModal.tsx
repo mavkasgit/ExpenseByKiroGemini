@@ -35,7 +35,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
   const [groupToDelete, setGroupToDelete] = useState<CategoryGroup | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null)
-  const toast = useToast()
+  const { error, success } = useToast()
 
   const loadGroups = useCallback(async () => {
     setIsLoading(true);
@@ -44,14 +44,14 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
       if (result.success) {
         setGroups(result.data || []);
       } else {
-        toast.error(result.error || 'Ошибка загрузки групп');
+        error(result.error || 'Ошибка загрузки групп');
       }
-    } catch (error) {
-      toast.error('Ошибка при загрузке групп');
+    } catch (err) {
+      error('Ошибка при загрузке групп');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [error]);
 
   useEffect(() => {
     if (isOpen) {
@@ -61,7 +61,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
-      toast.error('Введите название группы');
+      error('Введите название группы');
       return;
     }
     const result = await createCategoryGroup({ 
@@ -70,7 +70,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
       color: newGroupColor
     });
     if (result.success) {
-      toast.success('Группа создана');
+      success('Группа создана');
       setIsCreating(false);
       setNewGroupName('');
       setNewGroupIcon('other');
@@ -79,20 +79,20 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
       onSuccess();
       onGroupCreated(result.data); // Call the new prop with the created group
     } else {
-      toast.error(result.error || 'Ошибка при создании');
+      error(result.error || 'Ошибка при создании');
     }
   };
 
   const handleUpdateGroup = async (group: CategoryGroup, name: string, icon: string, color: string) => {
     const result = await updateCategoryGroup(group.id, { name, icon, color });
     if (result.success) {
-      toast.success('Группа обновлена');
+      success('Группа обновлена');
       setEditingGroup(null);
       loadGroups();
       onSuccess();
       onGroupUpdated(result.data); // Call the new prop with the updated group
     } else {
-      toast.error(result.error || 'Ошибка при обновлении');
+      error(result.error || 'Ошибка при обновлении');
     }
   };
 
@@ -106,11 +106,11 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
 
     const result = await deleteCategoryGroup(groupToDelete.id);
     if (result.success) {
-      toast.success('Группа удалена');
+      success('Группа удалена');
       loadGroups();
       onSuccess();
     } else {
-      toast.error(result.error || 'Ошибка при удалении');
+      error(result.error || 'Ошибка при удалении');
     }
 
     setIsConfirmingDelete(false);
@@ -126,7 +126,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
       setGroups(newOrder);
       const orderToUpdate = newOrder.map((g, index) => ({ id: g.id, sort_order: index }));
       await updateGroupOrder(orderToUpdate).catch(() => {
-        toast.error('Ошибка при обновлении порядка');
+        error('Ошибка при обновлении порядка');
         loadGroups();
       });
     }

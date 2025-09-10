@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, Active, Over } from '@dnd-kit/core'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useToast } from '@/hooks/useToast'
 import { Category, CategoryGroup } from '@/types'
-import { updateCategoryGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
+import { moveCategoryToGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
 import { Preset } from '@/lib/presets'
 import { applyPreset } from '@/lib/actions/presets'
 
@@ -16,6 +16,9 @@ import { GroupsModal } from './GroupsModal'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { Modal } from '@/components/ui/Modal'
 import { CategoryForm } from './CategoryForm'
+import { CategoryCard } from './CategoryCard'
+import { CategoryGroup as CategoryGroupComponent } from './CategoryGroup'
+
 
 interface CategoriesManagerProps {
   initialGroups: CategoryGroup[]
@@ -43,7 +46,7 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
     user_id: null,
     created_at: null,
     updated_at: null,
-    description: null, // Added missing description property
+    description: null,
   };
 
   let finalGroups = [...categorizedGroups];
@@ -61,10 +64,11 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
 };
 
 export function CategoriesManager({ initialGroups, initialCategories }: CategoriesManagerProps) {
-    const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
+  const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [activeGroup, setActiveGroup] = useState<CategoryGroup | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)
+  const [draggedItemWidth, setDraggedItemWidth] = useState<number | null>(null); // New state
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -82,17 +86,15 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 0,
       },
     })
   )
 
   const handleApplyPreset = async (newGroups: CategoryGroup[], newCategories: Category[]) => {
-    // The PresetPicker already called applyPreset and passed the results here.
-    // So, we just need to update the state in CategoriesManager.
     setGroups(buildGroupsWithCategories(newGroups, newCategories));
     setCategories(newCategories);
-    showToast(`Пресет успешно применен!`, 'success'); // Generic success message
+    showToast(`Пресет успешно применен!`, 'success');
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -102,93 +104,96 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
     }
     if (active.data.current?.type === 'group') {
       setActiveGroup(active.data.current.group)
-    }
-  }
-
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id || active.data.current?.type !== 'category') return
-
-    const activeGroupId = active.data.current?.category.category_group_id // Use category_group_id
-    const overId = over.id.toString()
-    const overIsGroup = overId.startsWith('group-')
-    const overGroupId = overIsGroup ? overId.replace('group-', '') : over.data.current?.category.category_group_id // Use category_group_id
-
-    if (activeGroupId !== overGroupId) {
-      setGroups(prev => {
-        const newGroups = prev.map(g => ({ ...g, categories: [...g.categories] }))
-        const sourceGroup = newGroups.find(g => g.id === activeGroupId)
-        const destGroup = newGroups.find(g => g.id === overGroupId)
-        if (!sourceGroup || !destGroup) return prev
-
-        const activeIndex = sourceGroup.categories.findIndex(c => c.id === active.id)
-        if (activeIndex === -1) return prev
-
-        const [movedCategory] = sourceGroup.categories.splice(activeIndex, 1)
-        movedCategory.category_group_id = overGroupId // Use category_group_id
-
-        if (overIsGroup) {
-          destGroup.categories.push(movedCategory)
-        } else {
-          const overIndex = destGroup.categories.findIndex(c => c.id === over.id)
-          destGroup.categories.splice(overIndex, 0, movedCategory)
-        }
-        return newGroups
-      })
+      setDraggedItemWidth(active.rect.current?.initial?.width || null); // Set width
     }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveGroup(null)
-    setActiveCategory(null)
+    const { active, over } = event;
 
-    if (!over) return
+    setActiveGroup(null);
+    setActiveCategory(null);
+    setDraggedItemWidth(null); // Reset width
 
+    if (!over) {
+      return;
+    }
+
+    // Handle group sorting
     if (active.data.current?.type === 'group' && active.id !== over.id) {
-      const oldIndex = groups.findIndex(g => g.id === active.id)
-      const newIndex = groups.findIndex(g => g.id === over.id)
-      const newOrder = arrayMove(groups, oldIndex, newIndex)
-      setGroups(newOrder)
-      await updateGroupOrder(newOrder.map((g, i) => ({ id: g.id, sort_order: i }))) // Use sort_order
-    } else if (active.data.current?.type === 'category') {
-      const sourceGroupId = active.data.current.category.category_group_id // Use category_group_id
-      const overId = over.id.toString()
-      const overIsGroup = overId.startsWith('group-')
-      const destGroupId = overIsGroup ? overId.replace('group-', '') : over.data.current?.category.category_group_id // Use category_group_id
+      const oldIndex = groups.findIndex(g => g.id === active.id);
+      const newIndex = groups.findIndex(g => g.id === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(groups, oldIndex, newIndex);
+        setGroups(newOrder);
+        updateGroupOrder(newOrder.map((g, i) => ({ id: g.id, sort_order: i })));
+      }
+      return;
+    }
 
+    // Handle category sorting
+    if (active.data.current?.type === 'category') {
+      const activeCategory = active.data.current.category as Category;
+      const sourceGroupId = activeCategory.category_group_id;
+
+      const overId = over.id.toString();
+      const overData = over.data.current;
+      
+      let destGroupId: string | null = null;
+      if (over.id.toString().startsWith('group-')) { // Dropped on a DroppableGroup
+          destGroupId = over.id.toString().replace('group-', '');
+      } else if (overData?.type === 'category') { // Dropped on a CategoryCard
+          destGroupId = overData.category.category_group_id;
+      } else if (overData?.type === 'group') { // This case might not happen if using DroppableGroup
+          destGroupId = over.id.toString();
+      }
+
+      if (!destGroupId) return;
+
+      const sourceGroup = groups.find(g => g.id === sourceGroupId);
+      const destGroup = groups.find(g => g.id === destGroupId);
+
+      if (!sourceGroup || !destGroup) return;
+
+      // Moving within the same group
       if (sourceGroupId === destGroupId) {
-        const group = groups.find(g => g.id === sourceGroupId)
-        if (group && active.id !== over.id) {
-          const oldIndex = group.categories.findIndex(c => c.id === active.id)
-          const newIndex = group.categories.findIndex(c => c.id === over.id)
-          const reorderedCategories = arrayMove(group.categories, oldIndex, newIndex)
-          
-          setGroups(prev => prev.map(g => g.id === sourceGroupId ? { ...g, categories: reorderedCategories } : g))
-          await updateCategoryOrderInGroup(reorderedCategories.map((c, i) => ({ id: c.id, order: i })))
+        if (active.id === over.id) return;
+        const oldIndex = sourceGroup.categories.findIndex(c => c.id === active.id);
+        const newIndex = destGroup.categories.findIndex(c => c.id === over.id);
+        
+        if (oldIndex !== -1 && newIndex !== -1) {
+            const reorderedCategories = arrayMove(sourceGroup.categories, oldIndex, newIndex);
+            const newGroups = groups.map(g => g.id === sourceGroupId ? {...g, categories: reorderedCategories} : g);
+            setGroups(newGroups);
+            updateCategoryOrderInGroup(reorderedCategories.map((c, i) => ({ id: c.id, order: i })));
         }
-      } else {
-        await updateCategoryGroup(active.id.toString(), destGroupId)
-        const finalGroups = groups.map(g => {
-          if (g.id === destGroupId) {
-            const destGroup = { ...g, categories: [...g.categories] };
-            if (!destGroup.categories.some(c => c.id === active.id)) {
-              const categoryToMove = categories.find(c => c.id === active.id);
-              if (categoryToMove) {
-                categoryToMove.category_group_id = destGroupId; // Ensure category_group_id is updated
-                destGroup.categories.push(categoryToMove); // Use categoryToMove
-              }
-            }
-            updateCategoryOrderInGroup(destGroup.categories.map((c, i) => ({ id: c.id, order: i })))
-            return destGroup;
-          } else if (g.id === sourceGroupId) {
-            const sourceGroup = { ...g, categories: g.categories.filter(c => c.id !== active.id) };
-            updateCategoryOrderInGroup(sourceGroup.categories.map((c, i) => ({ id: c.id, order: i })))
-            return sourceGroup;
-          }
-          return g;
+      } else { // Moving to a different group
+        const activeIndex = sourceGroup.categories.findIndex(c => c.id === active.id);
+        if (activeIndex === -1) return;
+
+        const [movedCategory] = sourceGroup.categories.splice(activeIndex, 1);
+        movedCategory.category_group_id = destGroupId;
+
+        let overIndex = destGroup.categories.length; // Default to end
+        if (overData?.type === 'category') {
+            overIndex = destGroup.categories.findIndex(c => c.id === over.id);
+            if (overIndex === -1) overIndex = destGroup.categories.length;
+        }
+        
+        destGroup.categories.splice(overIndex, 0, movedCategory);
+
+        const newGroups = groups.map(g => {
+            if (g.id === sourceGroupId) return sourceGroup;
+            if (g.id === destGroupId) return destGroup;
+            return g;
         });
-        setGroups(finalGroups);
+
+        setGroups(newGroups);
+        moveCategoryToGroup(active.id.toString(), destGroupId);
+        updateCategoryOrderInGroup(destGroup.categories.map((c, i) => ({ id: c.id, order: i })));
+        if(sourceGroup.categories.length > 0) {
+            updateCategoryOrderInGroup(sourceGroup.categories.map((c, i) => ({ id: c.id, order: i })));
+        }
       }
     }
   }
@@ -227,14 +232,24 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
     const savedCategory = Array.isArray(savedCategoryData) ? savedCategoryData[0] : savedCategoryData;
 
     let newCategories;
-    if (editingCategory) { // Update
+    if (editingCategory) {
         newCategories = categories.map(c => c.id === savedCategory.id ? savedCategory : c);
-    } else { // Create
+    } else {
         newCategories = [...categories, savedCategory];
     }
     setCategories(newCategories);
-    setGroups(buildGroupsWithCategories(groups, newCategories)); // Rebuild groups based on current groups and new categories
+    const currentGroups = groups.map(g => {
+        const { categories, ...groupData } = g;
+        return groupData;
+    });
+    setGroups(buildGroupsWithCategories(currentGroups, newCategories));
     setEditingCategory(null);
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    const newCategories = categories.filter(c => c.id !== categoryId);
+    setCategories(newCategories);
+    setGroups(buildGroupsWithCategories(initialGroups, newCategories));
   };
 
   const handleDeleteGroup = (groupId: string) => {
@@ -249,9 +264,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
   const confirmDeleteGroup = async () => {
     if (deletingGroupId) {
-      const originalGroups = groups;
       setGroups(prev => prev.filter(g => g.id !== deletingGroupId));
-      // TODO: Call server action and revert on failure
       setIsDeleteModalOpen(false);
       setDeletingGroupId(null);
     }
@@ -265,14 +278,6 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         <div className="flex justify-center">
           <PresetPicker onSuccess={handleApplyPreset} />
         </div>
-        <GroupsModal
-          isOpen={isGroupModalOpen}
-          onClose={() => setIsGroupModalOpen(false)}
-          onGroupCreated={handleGroupCreated}
-          onGroupUpdated={handleGroupUpdated}
-          editingGroup={editingGroup}
-          onSuccess={() => {}} // Add this line
-        />
       </div>
     );
   }
@@ -287,11 +292,31 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         </div>
       </div>
 
+      <GroupsModal
+        isOpen={isGroupModalOpen}
+        onClose={() => setIsGroupModalOpen(false)}
+        onGroupCreated={handleGroupCreated}
+        onGroupUpdated={handleGroupUpdated}
+        editingGroup={editingGroup}
+        onSuccess={() => setIsGroupModalOpen(false)}
+      />
+
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        title={editingCategory ? 'Редактировать категорию' : 'Создать категорию'}
+      >
+        <CategoryForm
+          onCategorySaved={handleCategorySaved}
+          groups={groups}
+          editingCategory={editingCategory}
+        />
+      </Modal>
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <GroupsManager
@@ -299,39 +324,27 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
           handleEditGroup={openGroupModalForEdit}
           handleDeleteGroup={handleDeleteGroup}
           handleEditCategory={openCategoryModalForEdit}
+          handleDeleteCategory={handleDeleteCategory}
           activeGroup={activeGroup}
           activeCategory={activeCategory}
         />
+        <DragOverlay>
+          {activeCategory ? (
+            <CategoryCard category={activeCategory} isOverlay />
+          ) : null}
+          {activeGroup ? (
+             <CategoryGroupComponent 
+                group={{...activeGroup, categories: groups.find(g => g.id === activeGroup.id)?.categories || []}}
+                activeCategory={null}
+                onDeleteGroup={() => {}}
+                onEditCategory={() => {}}
+                onEditGroup={() => {}}
+                onDeleteCategory={async (categoryId: string) => {}}
+                style={draggedItemWidth ? { width: draggedItemWidth } : undefined} // Add style prop
+             />
+          ) : null}
+        </DragOverlay>
       </DndContext>
-
-      <GroupsModal
-        isOpen={isGroupModalOpen}
-        onClose={() => setIsGroupModalOpen(false)}
-        onGroupCreated={handleGroupCreated}
-        onGroupUpdated={handleGroupUpdated}
-        editingGroup={editingGroup}
-        onSuccess={() => {}} // Add this line
-      />
-
-      <Modal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        title={editingCategory ? "Редактировать категорию" : "Создать новую категорию"}
-      >
-        <CategoryForm
-          category={editingCategory ?? undefined}
-          onSuccess={handleCategorySaved}
-          onCancel={() => setIsCategoryModalOpen(false)}
-        />
-      </Modal>
-
-      <ConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={confirmDeleteGroup}
-        title="Подтвердите удаление"
-        message="Вы уверены, что хотите удалить эту группу? Это действие необратимо."
-      />
     </div>
   )
 }

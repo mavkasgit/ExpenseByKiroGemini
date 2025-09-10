@@ -8,29 +8,35 @@ import { CategoryCard } from './CategoryCard'
 import { Button } from '@/components/ui'
 import { Category, CategoryGroup as TCategoryGroup } from '@/types'
 import { availableIcons } from '@/lib/utils/category-constants'
+import { memo } from 'react'
 
 interface CategoryGroupProps {
   group: TCategoryGroup & { categories: Category[] }
   onEditGroup: (group: TCategoryGroup) => void
   onDeleteGroup: (groupId: string) => void
   onEditCategory: (category: Category) => void
+  onDeleteCategory: (categoryId: string) => Promise<void>; // New prop
+  activeCategory: Category | null
+  style?: React.CSSProperties
 }
 
-export function CategoryGroup({ group, onEditGroup, onDeleteGroup, onEditCategory }: CategoryGroupProps) {
+function CategoryGroupComponent({ group, onEditGroup, onDeleteGroup, onEditCategory, onDeleteCategory, activeCategory, style: propStyle }: CategoryGroupProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
     data: { type: 'group', group },
   })
 
-  const style = {
+  const dndStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
   }
 
   const iconEmoji = availableIcons.find(icon => icon.key === group.icon)?.emoji || '📁'
+  const isAnyCategoryDragging = !!activeCategory;
+  const isSourceGroup = activeCategory ? group.id === activeCategory.category_group_id : false;
 
   return (
-    <div ref={setNodeRef} style={style} className={`bg-white rounded-xl shadow-sm ${isDragging ? 'opacity-50' : ''}`}>
+    <div ref={setNodeRef} style={{...dndStyle, ...propStyle}} className="bg-white rounded-xl shadow-sm">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <button {...attributes} {...listeners} className="cursor-grab p-2 -ml-2 text-gray-400 hover:text-gray-700">
@@ -41,9 +47,14 @@ export function CategoryGroup({ group, onEditGroup, onDeleteGroup, onEditCategor
           </div>
           <h3 className="text-lg font-bold text-gray-800">{group.name}</h3>
         </div>
-        </div>
+      </div>
       <div className="p-4">
-        <DroppableGroup id={group.id}>
+        <DroppableGroup 
+            id={group.id} 
+            groupName={group.name} 
+            isCategoryDragging={isAnyCategoryDragging}
+            isSourceGroup={isSourceGroup}
+        >
           {group.categories && group.categories.length > 0 ? (
             <SortableContext items={group.categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-3">
@@ -52,6 +63,7 @@ export function CategoryGroup({ group, onEditGroup, onDeleteGroup, onEditCategor
                     key={category.id}
                     category={category}
                     onEdit={onEditCategory}
+                    onDelete={onDeleteCategory} // Pass new handler
                     isDraggable
                   />
                 ))}
@@ -67,3 +79,5 @@ export function CategoryGroup({ group, onEditGroup, onDeleteGroup, onEditCategor
     </div>
   )
 }
+
+export const CategoryGroup = memo(CategoryGroupComponent);

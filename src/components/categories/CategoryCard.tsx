@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button, useToast } from '@/components/ui'
@@ -32,10 +32,10 @@ const iconMap: Record<string, string> = {
   'other': '📦'
 }
 
-export function CategoryCard({ category, onEdit, onDelete, onKeywords, isDraggable = false, isOverlay = false }: CategoryCardProps) {
+function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDraggable = false, isOverlay = false }: CategoryCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
-  const toast = useToast()
+  const { error, success } = useToast()
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: category.id,
@@ -59,11 +59,14 @@ export function CategoryCard({ category, onEdit, onDelete, onKeywords, isDraggab
     setIsDeleting(true);
     try {
       const result = await deleteCategory(category.id);
-      if (result.error) toast.error(result.error);
-      else toast.success('Категория успешно удалена');
-      onDelete?.(category.id);
-    } catch (error) {
-      toast.error('Произошла ошибка при удалении');
+      if (result.error) {
+        error(result.error);
+      } else {
+        success('Категория успешно удалена');
+        onDelete?.(category.id);
+      }
+    } catch (err) {
+      error('Произошла ошибка при удалении');
     } finally {
       setIsDeleting(false);
       setIsConfirmingDelete(false);
@@ -126,3 +129,5 @@ export function CategoryCard({ category, onEdit, onDelete, onKeywords, isDraggab
     </>
   );
 }
+
+export const CategoryCard = memo(CategoryCardComponent);

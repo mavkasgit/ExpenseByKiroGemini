@@ -11,6 +11,7 @@ interface GroupsManagerProps {
   handleEditGroup: (group: TCategoryGroup) => void
   handleDeleteGroup: (groupId: string) => void
   handleEditCategory: (category: Category) => void
+  handleDeleteCategory: (categoryId: string) => Promise<void>; // New prop
   activeGroup: TCategoryGroup | null
   activeCategory: Category | null
 }
@@ -20,6 +21,8 @@ export function GroupsManager({
   handleEditGroup,
   handleDeleteGroup,
   handleEditCategory,
+  handleDeleteCategory, // Destructure new prop
+  activeCategory,
 }: GroupsManagerProps) {
   return (
     <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy}>
@@ -31,6 +34,8 @@ export function GroupsManager({
             onEditGroup={handleEditGroup}
             onDeleteGroup={handleDeleteGroup}
             onEditCategory={handleEditCategory}
+            onDeleteCategory={handleDeleteCategory} // Pass new handler
+            activeCategory={activeCategory}
           />
         ))}
       </div>
