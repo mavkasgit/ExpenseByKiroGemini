@@ -7,10 +7,13 @@ import { useState, useRef, useEffect } from 'react';
 import type { CategoryGroup } from '@/types';
 import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/constants';
 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+
 function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSave: Function, onCancel: Function }) {
   const [name, setName] = useState(group.name);
   const [color, setColor] = useState(group.color || '#6b7280');
   const [icon, setIcon] = useState(group.icon || 'other');
+  const [iconSearch, setIconSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {    
@@ -22,36 +25,68 @@ function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSa
     }, 100);
   }, []);
 
+  const selectedIconEmoji = availableIcons.find(i => i.key === icon)?.emoji;
+
+  const filteredIcons = availableIcons.filter(i => 
+    i.names.some(name => name.toLowerCase().includes(iconSearch.toLowerCase())) ||
+    i.emoji.includes(iconSearch)
+  );
+
   return (
-    <div className="flex-1 space-y-3 p-2">
+    <div className="flex-1 space-y-3 p-4 bg-gray-50 border-t">
       <Input 
         ref={inputRef}
         value={name} 
         onChange={(e) => setName(e.target.value)} 
         placeholder="Название группы" 
+        autoComplete="off"
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); onSave(group, name, icon, color); }
           if (e.key === 'Escape') { onCancel(); }
         }}
       />
-      <div className="flex items-center">
-        <label className="text-sm font-medium text-gray-700 mr-3">Цвет</label>
-        <div className="flex-1 flex space-x-1 overflow-x-auto p-1">
-          {availableColors.slice(0, 12).map(c => (
-            <button key={c} type="button" onClick={() => setColor(c)} className={`w-7 h-7 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all duration-150 ${color === c ? 'ring-2 ring-offset-1 ring-blue-500 border-white' : 'border-transparent'}`} style={{ backgroundColor: c }}>
-              {color === c && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-            </button>
-          ))}
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setColor(getRandomColor())}>🎲</Button>
-      </div>
-      <div className="flex items-center">
-        <label className="text-sm font-medium text-gray-700 mr-3">Иконка</label>
-        <div className="flex-1 flex space-x-1 overflow-x-auto p-1">
-          {availableIcons.slice(0, 16).map(i => <button key={i.key} type="button" onClick={() => setIcon(i.key)} className={`w-9 h-9 p-1 rounded border flex-shrink-0 ${icon === i.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{i.emoji}</button>)}
-        </div>
-      </div>
-      <div className="flex justify-end space-x-2">
+      <div className="flex items-center gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="flex items-center gap-2">
+              <span className="text-xl">{selectedIconEmoji}</span>
+              <span>Иконка</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[320px] p-2">
+            <Input 
+              placeholder="Поиск иконки..."
+              value={iconSearch}
+              onChange={e => setIconSearch(e.target.value)}
+              className="mb-2"
+              autoComplete="off"
+            />
+            <div className="grid grid-cols-7 gap-1">
+              {filteredIcons.map(i => <button key={i.key} type="button" onClick={() => setIcon(i.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${icon === i.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{i.emoji}</button>)}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full border" style={{ backgroundColor: color }} />
+              <span>Цвет</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-2">
+            <div className="grid grid-cols-6 gap-1">
+              {availableColors.map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 transition-all ${color === c ? 'ring-2 ring-offset-1 ring-blue-500 border-white' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <Button type="button" variant="outline" size="sm" onClick={() => setColor(getRandomColor())} title="Случайный цвет">🎲</Button>
+
+        <div className="flex-grow"></div>
+
         <Button variant="ghost" size="sm" onClick={() => onCancel()}>Отмена</Button>
         <Button variant="primary" size="sm" onClick={() => onSave(group, name, icon, color)}>Сохранить</Button>
       </div>
@@ -82,8 +117,8 @@ export function SortableGroupItem({ group, onEdit, onDelete, onSave, onCancel, e
           </div>
         </div>
         <div className="flex space-x-2">
-          <Button variant="ghost" size="sm" onClick={() => onEdit(group)}>Редактировать</Button>
-          <Button variant="ghost" size="sm" onClick={() => onDelete(group)}>Удалить</Button>
+          <Button variant="outline" size="sm" onClick={() => onEdit(group)} className="text-blue-600 border-blue-600 hover:bg-blue-50 hover:text-blue-700">Редактировать</Button>
+          <Button variant="danger" size="sm" onClick={() => onDelete(group)}>Удалить</Button>
         </div>
       </div>
       {editingGroup?.id === group.id && (

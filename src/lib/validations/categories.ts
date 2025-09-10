@@ -12,11 +12,7 @@ export const categorySchema = z.object({
     .min(1, 'Иконка обязательна')
     .max(50, 'Название иконки слишком длинное')
     .optional(),
-  group_name: z.string()
-    .min(1, 'Название группы обязательно')
-    .max(50, 'Название группы не должно превышать 50 символов')
-    .trim()
-    .optional()
+  category_group_id: z.string().uuid('Неверный ID группы').nullable().optional()
 })
 
 export const updateCategorySchema = z.object({

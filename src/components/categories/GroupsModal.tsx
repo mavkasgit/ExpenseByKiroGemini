@@ -7,16 +7,23 @@ import { Button, Input, Modal, useToast } from '@/components/ui'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { createCategoryGroup, updateCategoryGroup, deleteCategoryGroup, getCategoryGroups, updateGroupOrder } from '@/lib/actions/categories'
 import { SortableGroupItem } from './SortableGroupItem';
+
 import type { CategoryGroup } from '@/types';
 import { availableIcons, availableColors, getRandomColor } from '@/lib/utils/constants';
 
-interface GroupsModalProps {
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+
+
+  interface GroupsModalProps {
   isOpen: boolean
   onClose: () => void
+  onGroupCreated: (newGroup: CategoryGroup) => void
+  onGroupUpdated: (updatedGroup: CategoryGroup) => void
+  editingGroup?: CategoryGroup | null; // Make it optional as it's not always passed
   onSuccess: () => void
 }
 
-export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
+export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGroupUpdated }: GroupsModalProps) {
   const [groups, setGroups] = useState<CategoryGroup[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
@@ -24,6 +31,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupIcon, setNewGroupIcon] = useState('other')
   const [newGroupColor, setNewGroupColor] = useState('#6b7280')
+  const [iconSearch, setIconSearch] = useState('')
   const [groupToDelete, setGroupToDelete] = useState<CategoryGroup | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -43,7 +51,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -69,6 +77,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
       setNewGroupColor('#6b7280');
       loadGroups();
       onSuccess();
+      onGroupCreated(result.data); // Call the new prop with the created group
     } else {
       toast.error(result.error || 'Ошибка при создании');
     }
@@ -81,6 +90,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
       setEditingGroup(null);
       loadGroups();
       onSuccess();
+      onGroupUpdated(result.data); // Call the new prop with the updated group
     } else {
       toast.error(result.error || 'Ошибка при обновлении');
     }
@@ -139,6 +149,13 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
     }
   }, [isCreating]);
 
+  const newGroupIconEmoji = availableIcons.find(i => i.key === newGroupIcon)?.emoji;
+
+  const filteredIcons = availableIcons.filter(icon => 
+    icon.names.some(name => name.toLowerCase().includes(iconSearch.toLowerCase())) ||
+    icon.emoji.includes(iconSearch)
+  );
+
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Управление группами" size="lg">
       <div className="space-y-4">
@@ -162,28 +179,56 @@ export function GroupsModal({ isOpen, onClose, onSuccess }: GroupsModalProps) {
               onChange={(e) => setNewGroupName(e.target.value)} 
               placeholder="Название новой группы" 
               required 
+              autoComplete="off"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') { e.preventDefault(); handleCreateGroup(); }
                 if (e.key === 'Escape') { setIsCreating(false); }
               }}
             />
-            <div className="flex items-center">
-              <label className="text-sm font-medium text-gray-700 mr-4">Цвет</label>
-              <div className="flex-1 flex space-x-2 overflow-x-auto p-2">
-                {availableColors.map(color => (
-                  <button key={color} type="button" onClick={() => setNewGroupColor(color)} className={`w-8 h-8 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all duration-150 ${newGroupColor === color ? 'ring-2 ring-offset-2 ring-blue-500 border-white' : 'border-transparent'}`} style={{ backgroundColor: color }}>
-                    {newGroupColor === color && <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center">
-              <label className="text-sm font-medium text-gray-700 mr-4">Иконка</label>
-              <div className="flex-1 flex space-x-2 overflow-x-auto p-2">
-                {availableIcons.map(icon => <button key={icon.key} type="button" onClick={() => setNewGroupIcon(icon.key)} className={`w-10 h-10 p-2 rounded-lg border-2 flex-shrink-0 ${newGroupIcon === icon.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`} title={icon.names[0]}>{icon.emoji}</button>)}
-              </div>
-            </div>
-            <div className="flex justify-end space-x-2">
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <span className="text-xl">{newGroupIconEmoji}</span>
+                    <span>Иконка</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-2">
+                  <Input 
+                    placeholder="Поиск иконки..."
+                    value={iconSearch}
+                    onChange={e => setIconSearch(e.target.value)}
+                    className="mb-2"
+                    autoComplete="off"
+                  />
+                  <div className="grid grid-cols-7 gap-1">
+                    {filteredIcons.map(icon => (
+                      <button key={icon.key} type="button" onClick={() => setNewGroupIcon(icon.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${newGroupIcon === icon.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{icon.emoji}</button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full border" style={{ backgroundColor: newGroupColor }} />
+                    <span>Цвет</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2">
+                  <div className="grid grid-cols-6 gap-1">
+                    {availableColors.map(color => (
+                      <button key={color} type="button" onClick={() => setNewGroupColor(color)} className={`w-8 h-8 rounded-full border-2 transition-all ${newGroupColor === color ? 'ring-2 ring-offset-1 ring-blue-500 border-white' : 'border-transparent'}`} style={{ backgroundColor: color }} />
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Button type="button" variant="outline" size="sm" onClick={() => setNewGroupColor(getRandomColor())} title="Случайный цвет">🎲</Button>
+
+              <div className="flex-grow"></div>
+
               <Button variant="ghost" onClick={() => setIsCreating(false)}>Отмена</Button>
               <Button onClick={handleCreateGroup}>Сохранить</Button>
             </div>

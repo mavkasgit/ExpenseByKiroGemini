@@ -1,86 +1,69 @@
 'use client'
 
-import { useState } from 'react'
-import { useDroppable } from '@dnd-kit/core'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { DroppableGroup } from './DroppableGroup'
 import { CategoryCard } from './CategoryCard'
-import type { Category } from '@/types'
+import { Button } from '@/components/ui'
+import { Category, CategoryGroup as TCategoryGroup } from '@/types'
+import { availableIcons } from '@/lib/utils/category-constants'
 
 interface CategoryGroupProps {
-  groupName: string
-  categories: Category[]
-  onEdit: (category: Category) => void
-  onDelete: (categoryId: string) => void
-  onKeywords: (category: Category) => void
+  group: TCategoryGroup & { categories: Category[] }
+  onEditGroup: (group: TCategoryGroup) => void
+  onDeleteGroup: (groupId: string) => void
+  onEditCategory: (category: Category) => void
 }
 
-export function CategoryGroup({ groupName, categories, onEdit, onDelete, onKeywords }: CategoryGroupProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  
-  const { setNodeRef } = useDroppable({
-    id: `group-${groupName}`,
-    data: {
-      type: 'group',
-      groupName
-    }
+export function CategoryGroup({ group, onEditGroup, onDeleteGroup, onEditCategory }: CategoryGroupProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: group.id,
+    data: { type: 'group', group },
   })
 
-  if (categories.length === 0) {
-    return null
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
   }
 
-  return (
-    <div className="space-y-3">
-      {/* Заголовок группы */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex items-center space-x-2 text-lg font-semibold text-gray-800 hover:text-gray-600 transition-colors"
-        >
-          <svg 
-            className={`w-4 h-4 transition-transform ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
-            fill="none" 
-            stroke="currentColor" 
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-          <span>{groupName}</span>
-          <span className="text-sm text-gray-500 font-normal">({categories.length})</span>
-        </button>
-      </div>
+  const iconEmoji = availableIcons.find(icon => icon.key === group.icon)?.emoji || '📁'
 
-      {/* Область для drop */}
-      {!isCollapsed && (
-        <div
-          ref={setNodeRef}
-          className="min-h-[60px] p-2 border-2 border-dashed border-gray-200 rounded-lg transition-colors hover:border-gray-300"
-        >
-          <SortableContext 
-            items={categories.map(cat => cat.id)} 
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {categories.map((category) => (
-                <CategoryCard
-                  key={category.id}
-                  category={category}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onKeywords={onKeywords}
-                  isDraggable={true}
-                />
-              ))}
-            </div>
-          </SortableContext>
-          
-          {categories.length === 0 && (
-            <div className="text-center py-8 text-gray-400">
-              <p>Перетащите категории сюда</p>
+  return (
+    <div ref={setNodeRef} style={style} className={`bg-white rounded-xl shadow-sm ${isDragging ? 'opacity-50' : ''}`}>
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <button {...attributes} {...listeners} className="cursor-grab p-2 -ml-2 text-gray-400 hover:text-gray-700">
+            <svg viewBox="0 0 20 20" width="20"><path d="M7 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 2zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 14zm6-8a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 6zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 12z" fill="currentColor"></path></svg>
+          </button>
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl" style={{ backgroundColor: `${group.color}20` }}>
+            <span>{iconEmoji}</span>
+          </div>
+          <h3 className="text-lg font-bold text-gray-800">{group.name}</h3>
+        </div>
+        </div>
+      <div className="p-4">
+        <DroppableGroup id={group.id}>
+          {group.categories && group.categories.length > 0 ? (
+            <SortableContext items={group.categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+              <div className="flex flex-col gap-3">
+                {group.categories.map(category => (
+                  <CategoryCard
+                    key={category.id}
+                    category={category}
+                    onEdit={onEditCategory}
+                    isDraggable
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              Перетащите категории сюда или создайте новую.
             </div>
           )}
-        </div>
-      )}
+        </DroppableGroup>
+      </div>
     </div>
   )
 }
