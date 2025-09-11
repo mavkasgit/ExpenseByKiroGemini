@@ -1,49 +1,26 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { useToast } from '@/hooks/useToast'
-import { getKeywordsByCategory, createKeyword, deleteKeyword } from '@/lib/actions/keywords'
+import { createKeyword, deleteKeyword } from '@/lib/actions/keywords'
 import type { Category, CategoryKeyword } from '@/types'
 
 interface CategoryKeywordsModalProps {
   isOpen: boolean
   onClose: () => void
   category: Category
+  keywords: CategoryKeyword[]
+  onKeywordChange: () => void
 }
 
-export function CategoryKeywordsModal({ isOpen, onClose, category }: CategoryKeywordsModalProps) {
-  const [keywords, setKeywords] = useState<CategoryKeyword[]>([])
+export function CategoryKeywordsModal({ isOpen, onClose, category, keywords, onKeywordChange }: CategoryKeywordsModalProps) {
   const [newKeyword, setNewKeyword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
   const { showToast } = useToast()
-
-  // Загружаем ключевые слова при открытии модального окна
-  useEffect(() => {
-    if (isOpen && category.id) {
-      loadKeywords()
-    }
-  }, [isOpen, category.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadKeywords = async () => {
-    setIsLoading(true)
-    try {
-      const result = await getKeywordsByCategory(category.id)
-      if (result.success) {
-        setKeywords(result.data || [])
-      } else {
-        showToast(result.error || 'Ошибка загрузки ключевых слов', 'error')
-      }
-    } catch (error) {
-      showToast('Произошла ошибка при загрузке', 'error')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleAddKeyword = async () => {
     if (!newKeyword.trim()) {
@@ -61,7 +38,7 @@ export function CategoryKeywordsModal({ isOpen, onClose, category }: CategoryKey
       if (result.success) {
         showToast('Ключевое слово добавлено', 'success')
         setNewKeyword('')
-        loadKeywords() // Перезагружаем список
+        onKeywordChange()
       } else {
         showToast(result.error || 'Ошибка добавления ключевого слова', 'error')
       }
@@ -77,7 +54,7 @@ export function CategoryKeywordsModal({ isOpen, onClose, category }: CategoryKey
       const result = await deleteKeyword(keywordId)
       if (result.success) {
         showToast('Ключевое слово удалено', 'success')
-        setKeywords(prev => prev.filter(k => k.id !== keywordId))
+        onKeywordChange()
       } else {
         showToast(result.error || 'Ошибка удаления ключевого слова', 'error')
       }
@@ -116,12 +93,7 @@ export function CategoryKeywordsModal({ isOpen, onClose, category }: CategoryKey
 
         {/* Список ключевых слов */}
         <div className="max-h-60 overflow-y-auto">
-          {isLoading ? (
-            <div className="text-center py-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="text-sm text-gray-600 mt-2">Загрузка...</p>
-            </div>
-          ) : keywords.length === 0 ? (
+          {keywords.length === 0 ? (
             <Card className="p-4 text-center">
               <p className="text-gray-600 text-sm">
                 Нет ключевых слов для этой категории

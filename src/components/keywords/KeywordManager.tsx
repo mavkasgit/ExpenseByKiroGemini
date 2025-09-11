@@ -12,7 +12,7 @@ import {
   createKeyword, 
   updateKeyword, 
   deleteKeyword, 
-  getKeywords,
+  getAllKeywords,
   getKeywordsByCategory 
 } from '@/lib/actions/keywords'
 import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
@@ -58,7 +58,7 @@ export function KeywordManager({ categories, selectedCategoryId, onKeywordChange
       if (selectedCategoryId) {
         result = await getKeywordsByCategory(selectedCategoryId)
       } else {
-        result = await getKeywords()
+        result = await getAllKeywords()
       }
 
       if (result.error) {

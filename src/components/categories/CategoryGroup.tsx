@@ -15,12 +15,13 @@ interface CategoryGroupProps {
   onEditGroup: (group: TCategoryGroup) => void
   onDeleteGroup: (groupId: string) => void
   onEditCategory: (category: Category) => void
-  onDeleteCategory: (categoryId: string) => Promise<void>; // New prop
+  onKeywordsCategory: (category: Category) => void
+  onDeleteCategory: (categoryId: string) => Promise<void>;
   activeCategory: Category | null
   style?: React.CSSProperties
 }
 
-function CategoryGroupComponent({ group, onEditGroup, onDeleteGroup, onEditCategory, onDeleteCategory, activeCategory, style: propStyle }: CategoryGroupProps) {
+function CategoryGroupComponent({ group, onEditGroup, onDeleteGroup, onEditCategory, onKeywordsCategory, onDeleteCategory, activeCategory, style: propStyle }: CategoryGroupProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
     data: { type: 'group', group },
@@ -63,7 +64,8 @@ function CategoryGroupComponent({ group, onEditGroup, onDeleteGroup, onEditCateg
                     key={category.id}
                     category={category}
                     onEdit={onEditCategory}
-                    onDelete={onDeleteCategory} // Pass new handler
+                    onKeywords={onKeywordsCategory}
+                    onDelete={onDeleteCategory}
                     isDraggable
                   />
                 ))}

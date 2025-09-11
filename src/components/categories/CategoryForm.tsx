@@ -94,7 +94,7 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
   ];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 w-full">
       <Input
         ref={nameInputRef}
         label="Название категории"
@@ -159,21 +159,24 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
 
         <div className="flex-grow"></div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={isLoading}
-        >
-          Отмена
-        </Button>
-        <Button
-          type="submit"
-          variant="primary"
-          isLoading={isLoading}
-        >
-          {category ? 'Обновить' : 'Создать'}
-        </Button>
+        <div className="flex items-center space-x-3">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={isLoading}
+          >
+            Отмена
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            isLoading={isLoading}
+            className="min-w-[120px]"
+          >
+            {category ? 'Обновить' : 'Создать'}
+          </Button>
+        </div>
       </div>
     </form>
   )

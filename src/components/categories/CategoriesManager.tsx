@@ -4,8 +4,9 @@ import { useState, useMemo, useEffect } from 'react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useToast } from '@/hooks/useToast'
-import { Category, CategoryGroup } from '@/types'
+import { Category, CategoryGroup, CategoryKeyword } from '@/types'
 import { moveCategoryToGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
+import { getAllKeywords } from '@/lib/actions/keywords'
 import { Preset } from '@/lib/presets'
 import { applyPreset } from '@/lib/actions/presets'
 
@@ -18,6 +19,7 @@ import { Modal } from '@/components/ui/Modal'
 import { CategoryForm } from './CategoryForm'
 import { CategoryCard } from './CategoryCard'
 import { CategoryGroup as CategoryGroupComponent } from './CategoryGroup'
+import { CategoryKeywordsModal } from './CategoryKeywordsModal'
 
 
 interface CategoriesManagerProps {
@@ -66,6 +68,7 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
 export function CategoriesManager({ initialGroups, initialCategories }: CategoriesManagerProps) {
   const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
   const [categories, setCategories] = useState<Category[]>(initialCategories)
+  const [allKeywords, setAllKeywords] = useState<CategoryKeyword[]>([]);
   const [activeGroup, setActiveGroup] = useState<CategoryGroup | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)
   const [draggedItemWidth, setDraggedItemWidth] = useState<number | null>(null); // New state
@@ -74,13 +77,22 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | undefined>(undefined);
+  const [isKeywordsModalOpen, setIsKeywordsModalOpen] = useState(false);
+  const [selectedCategoryForKeywords, setSelectedCategoryForKeywords] = useState<Category | null>(null);
 
   const { showToast } = useToast()
 
   useEffect(() => {
     setGroups(buildGroupsWithCategories(initialGroups, initialCategories));
     setCategories(initialCategories);
+    const fetchKeywords = async () => {
+      const result = await getAllKeywords();
+      if (result.success) {
+        setAllKeywords(result.data || []);
+      }
+    };
+    fetchKeywords();
   }, [initialGroups, initialCategories]);
 
   const sensors = useSensors(
@@ -218,13 +230,30 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   };
 
   const openCategoryModalForCreate = () => {
-    setEditingCategory(null);
+    setEditingCategory(undefined);
     setIsCategoryModalOpen(true);
   };
 
   const openCategoryModalForEdit = (category: Category) => {
     setEditingCategory(category);
     setIsCategoryModalOpen(true);
+  };
+
+  const handleOpenKeywordsModal = (category: Category) => {
+    setSelectedCategoryForKeywords(category);
+    setIsKeywordsModalOpen(true);
+  };
+
+  const handleCloseKeywordsModal = () => {
+    setIsKeywordsModalOpen(false);
+    setSelectedCategoryForKeywords(null);
+  };
+
+  const handleKeywordChange = async () => {
+    const result = await getAllKeywords();
+    if (result.success) {
+      setAllKeywords(result.data || []);
+    }
   };
 
   const handleCategorySaved = (savedCategoryData: any) => {
@@ -243,7 +272,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         return groupData;
     });
     setGroups(buildGroupsWithCategories(currentGroups, newCategories));
-    setEditingCategory(null);
+    setEditingCategory(undefined);
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
@@ -305,13 +334,24 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         isOpen={isCategoryModalOpen}
         onClose={() => setIsCategoryModalOpen(false)}
         title={editingCategory ? 'Редактировать категорию' : 'Создать категорию'}
+        customSize="max-w-[550px]"
       >
         <CategoryForm
-          onCategorySaved={handleCategorySaved}
-          groups={groups}
-          editingCategory={editingCategory}
+          onSuccess={handleCategorySaved}
+          onCancel={() => setIsCategoryModalOpen(false)}
+          category={editingCategory}
         />
       </Modal>
+
+      {selectedCategoryForKeywords && (
+        <CategoryKeywordsModal
+          isOpen={isKeywordsModalOpen}
+          onClose={handleCloseKeywordsModal}
+          category={selectedCategoryForKeywords}
+          keywords={allKeywords.filter(k => k.category_id === selectedCategoryForKeywords.id)}
+          onKeywordChange={handleKeywordChange}
+        />
+      )}
 
       <DndContext
         sensors={sensors}
@@ -325,6 +365,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
           handleDeleteGroup={handleDeleteGroup}
           handleEditCategory={openCategoryModalForEdit}
           handleDeleteCategory={handleDeleteCategory}
+          handleKeywordsCategory={handleOpenKeywordsModal}
           activeGroup={activeGroup}
           activeCategory={activeCategory}
         />
@@ -339,6 +380,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
                 onDeleteGroup={() => {}}
                 onEditCategory={() => {}}
                 onEditGroup={() => {}}
+                onKeywordsCategory={() => {}}
                 onDeleteCategory={async (categoryId: string) => {}}
                 style={draggedItemWidth ? { width: draggedItemWidth } : undefined} // Add style prop
              />

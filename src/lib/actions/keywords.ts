@@ -154,7 +154,7 @@ export async function deleteKeyword(id: string) {
 }
 
 // Получение всех ключевых слов пользователя
-export async function getKeywords() {
+export async function getAllKeywords() {
   const supabase = await createServerClient()
 
   try {
