@@ -90,17 +90,19 @@ export default async function MainPage() {
             <p className="text-gray-600 group-hover:text-green-700 transition-colors">Просмотр и управление расходами</p>
           </Link>
           
+          
+          
           <Link
-            href="/expenses/add"
-            className="group bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-blue-50 hover:to-blue-100 hover:scale-105"
+            href="/expenses/bulk"
+            className="group bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 cursor-pointer hover:bg-gradient-to-br hover:from-orange-50 hover:to-orange-100 hover:scale-105"
           >
             <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-blue-200 transition-colors">
-                <span className="text-2xl">➕</span>
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4 group-hover:bg-orange-200 transition-colors">
+                <span className="text-2xl">📦</span>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-blue-800 transition-colors">Добавить расход</h2>
+              <h2 className="text-xl font-semibold text-gray-900 group-hover:text-orange-800 transition-colors">Массовый ввод</h2>
             </div>
-            <p className="text-gray-600 group-hover:text-blue-700 transition-colors">Различные способы ввода расходов</p>
+            <p className="text-gray-600 group-hover:text-orange-700 transition-colors">Загрузка расходов из файла</p>
           </Link>
           
           <Link

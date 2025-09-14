@@ -9,7 +9,6 @@ import { ExpenseEditModal } from './ExpenseEditModal'
 import { InlineNotesEditor } from './InlineNotesEditor'
 import { formatAmount } from '@/lib/utils/formatNumber'
 import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
-import { deleteAllExpenses } from '@/lib/actions/expenses'
 import { useToast } from '@/hooks/useToast'
 import type { Category, ExpenseWithCategory } from '@/types'
 import Link from 'next/link'
@@ -29,8 +28,6 @@ export function ExpensesPageContent({
   const [hideUncategorized, setHideUncategorized] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ExpenseWithCategory | null>(null)
   const [expenses, setExpenses] = useState(initialExpenses)
-  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
   const { showToast } = useToast()
 
   if (error) {
@@ -59,26 +56,6 @@ export function ExpensesPageContent({
     ))
   }
 
-  // Удаление всех расходов
-  const handleDeleteAll = async () => {
-    setIsDeleting(true)
-    try {
-      const result = await deleteAllExpenses()
-      
-      if (result.error) {
-        showToast(result.error, 'error')
-      } else {
-        setExpenses([])
-        showToast('Все расходы удалены', 'success')
-        setShowDeleteAllModal(false)
-      }
-    } catch (error) {
-      showToast('Произошла ошибка при удалении расходов', 'error')
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
   if (expenses.length === 0) {
     return (
       <Card className="p-8 text-center">
@@ -89,7 +66,7 @@ export function ExpensesPageContent({
           Начните отслеживать свои расходы, добавив первую запись.
         </p>
         <div className="space-y-3">
-          <Link href="/expenses/add">
+          <Link href="/dashboard">
             <Button className="w-full">
               Добавить первый расход
             </Button>
@@ -145,22 +122,12 @@ export function ExpensesPageContent({
         </div>
         
         <div className="flex space-x-2">
-          <Link href="/expenses/add">
+          <Link href="/dashboard">
             <Button>Добавить расход</Button>
           </Link>
           <Link href="/expenses/bulk">
             <Button variant="outline">Массовый ввод</Button>
           </Link>
-
-          {expenses.length > 0 && (
-            <Button 
-              variant="danger" 
-              onClick={() => setShowDeleteAllModal(true)}
-              className="ml-2"
-            >
-              🗑️ Удалить все
-            </Button>
-          )}
         </div>
       </div>
 
@@ -280,47 +247,6 @@ export function ExpensesPageContent({
           onSuccess={handleExpenseUpdate}
         />
       )}
-
-      {/* Модал подтверждения удаления всех расходов */}
-      <Modal
-        isOpen={showDeleteAllModal}
-        onClose={() => setShowDeleteAllModal(false)}
-        title="Удалить все расходы"
-      >
-        <div className="space-y-4">
-          <p className="text-gray-700">
-            Вы уверены, что хотите удалить все расходы? Это действие нельзя отменить.
-          </p>
-          <p className="text-sm text-gray-600">
-            Будет удалено расходов: <strong>{expenses.length}</strong>
-          </p>
-          
-          <div className="flex space-x-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteAllModal(false)}
-              disabled={isDeleting}
-            >
-              Отмена
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleDeleteAll}
-              disabled={isDeleting}
-              className={isDeleting ? 'animate-pulse' : ''}
-            >
-              {isDeleting ? (
-                <span className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Удаление...
-                </span>
-              ) : (
-                '🗑️ Удалить все'
-              )}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </>
   )
 }

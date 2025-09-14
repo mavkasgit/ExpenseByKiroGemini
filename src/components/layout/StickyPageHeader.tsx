@@ -32,14 +32,9 @@ export function StickyPageHeader({ title, description, userEmail }: StickyPageHe
       isActive: pathname === '/dashboard'
     },
     {
-      href: '/expenses/add',
-      label: '➕ Добавить',
-      isActive: pathname === '/expenses/add'
-    },
-    {
       href: '/expenses',
       label: '💰 Расходы',
-      isActive: pathname.startsWith('/expenses') && !pathname.startsWith('/expenses/add')
+      isActive: pathname.startsWith('/expenses')
     },
     {
       href: '/categories',
