@@ -3,6 +3,41 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// --- User Settings ---
+
+export interface UserSettings {
+  enable_bilingual_keywords?: boolean
+}
+
+export async function getUserSettings(): Promise<{ settings?: UserSettings; error?: string }> {
+  const supabase = await createServerClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+  if (userError || !user) {
+    return { error: 'Пользователь не авторизован' }
+  }
+
+  return { settings: user.user_metadata as UserSettings }
+}
+
+export async function updateUserSettings(newSettings: Partial<UserSettings>): Promise<{ settings?: UserSettings; error?: string }> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.auth.updateUser({
+    data: newSettings,
+  })
+
+  if (error) {
+    return { error: 'Ошибка при обновлении настроек: ' + error.message }
+  }
+
+  revalidatePath('/', 'layout')
+
+  return { settings: data.user?.user_metadata as UserSettings }
+}
+
+
+// --- Data Deletion ---
+
 interface SelectiveDeleteOptions {
   deleteGroups?: boolean
   deleteCategories?: boolean

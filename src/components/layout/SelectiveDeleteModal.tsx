@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal, Button, useToast } from '@/components/ui'
 import { selectiveDelete } from '@/lib/actions/settings'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
@@ -23,8 +23,27 @@ export function SelectiveDeleteModal({ isOpen, onClose }: SelectiveDeleteModalPr
   const [isConfirming, setIsConfirming] = useState(false)
   const toast = useToast()
 
+  useEffect(() => {
+    if (isOpen) {
+      try {
+        const savedOptions = localStorage.getItem('selectiveDeleteOptions');
+        if (savedOptions) {
+          setSelectedOptions(JSON.parse(savedOptions));
+        }
+      } catch (error) {
+        console.error("Failed to parse selective delete options from localStorage", error);
+      }
+    }
+  }, [isOpen]);
+
   const handleCheckboxChange = (optionId: string) => {
-    setSelectedOptions(prev => ({ ...prev, [optionId]: !prev[optionId] }))
+    const newOptions = { ...selectedOptions, [optionId]: !selectedOptions[optionId] };
+    setSelectedOptions(newOptions);
+    try {
+      localStorage.setItem('selectiveDeleteOptions', JSON.stringify(newOptions));
+    } catch (error) {
+      console.error("Failed to save selective delete options to localStorage", error);
+    }
   }
 
   const handleDeleteRequest = () => {

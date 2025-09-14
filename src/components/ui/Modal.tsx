@@ -1,8 +1,11 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+
+// Global stack to manage open modals
+const modalStack: string[] = [];
 
 export interface ModalProps {
   isOpen: boolean
@@ -30,6 +33,28 @@ export function Modal({
   closeOnEscape = true
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
+  const modalId = useId();
+
+  // Manage modal stack for proper Esc key handling
+  useEffect(() => {
+    if (isOpen) {
+      if (!modalStack.includes(modalId)) {
+        modalStack.push(modalId);
+      }
+    } else {
+      const index = modalStack.indexOf(modalId);
+      if (index > -1) {
+        modalStack.splice(index, 1);
+      }
+    }
+    // Cleanup on unmount
+    return () => {
+      const index = modalStack.indexOf(modalId);
+      if (index > -1) {
+        modalStack.splice(index, 1);
+      }
+    };
+  }, [isOpen, modalId]);
 
   // Handle escape key
   useEffect(() => {
@@ -37,26 +62,33 @@ export function Modal({
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
-        onClose()
+        // Only the top-most modal should handle the escape key
+        if (modalStack.length > 0 && modalStack[modalStack.length - 1] === modalId) {
+          onClose()
+        }
       }
     }
 
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen, onClose, closeOnEscape])
+  }, [isOpen, onClose, closeOnEscape, modalId])
 
   // Handle body scroll lock
   useEffect(() => {
-    if (isOpen) {
+    // If any modal is open, body scroll should be hidden
+    if (modalStack.length > 0) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = 'unset'
     }
 
+    // Cleanup on unmount
     return () => {
-      document.body.style.overflow = 'unset'
+      if (modalStack.length === 0) {
+        document.body.style.overflow = 'unset'
+      }
     }
-  }, [isOpen])
+  }, [isOpen]) // Rerunning when any modal's isOpen changes should be sufficient
 
   // Handle overlay click
   const handleOverlayClick = (e: React.MouseEvent) => {

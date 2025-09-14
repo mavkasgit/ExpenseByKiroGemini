@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/useToast'
 import { Category, CategoryGroup, CategoryKeyword } from '@/types'
 import { moveCategoryToGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
 import { getAllKeywords } from '@/lib/actions/keywords'
+import { getUserSettings, UserSettings } from '@/lib/actions/settings'
 import { Preset } from '@/lib/presets'
 import { applyPreset } from '@/lib/actions/presets'
 
@@ -19,7 +20,7 @@ import { Modal } from '@/components/ui/Modal'
 import { CategoryForm } from './CategoryForm'
 import { CategoryCard } from './CategoryCard'
 import { CategoryGroup as CategoryGroupComponent } from './CategoryGroup'
-import { CategoryKeywordsModal } from './CategoryKeywordsModal'
+import { KeywordEditorModal } from './KeywordEditorModal'
 
 
 interface CategoriesManagerProps {
@@ -69,6 +70,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [allKeywords, setAllKeywords] = useState<CategoryKeyword[]>([]);
+  const [userSettings, setUserSettings] = useState<UserSettings>({});
   const [activeGroup, setActiveGroup] = useState<CategoryGroup | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)
   const [draggedItemWidth, setDraggedItemWidth] = useState<number | null>(null); // New state
@@ -86,14 +88,22 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   useEffect(() => {
     setGroups(buildGroupsWithCategories(initialGroups, initialCategories));
     setCategories(initialCategories);
-    const fetchKeywords = async () => {
-      const result = await getAllKeywords();
-      if (result.success) {
-        setAllKeywords(result.data || []);
+    const fetchData = async () => {
+      const [keywordsResult, settingsResult] = await Promise.all([
+        getAllKeywords(),
+        getUserSettings()
+      ]);
+      
+      if (keywordsResult.success) {
+        setAllKeywords(keywordsResult.data || []);
+      }
+      if (settingsResult.settings) {
+        setUserSettings(settingsResult.settings);
       }
     };
-    fetchKeywords();
-  }, [initialGroups, initialCategories]);
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -344,12 +354,14 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
       </Modal>
 
       {selectedCategoryForKeywords && (
-        <CategoryKeywordsModal
+        <KeywordEditorModal
           isOpen={isKeywordsModalOpen}
           onClose={handleCloseKeywordsModal}
           category={selectedCategoryForKeywords}
+          categories={categories}
           keywords={allKeywords.filter(k => k.category_id === selectedCategoryForKeywords.id)}
           onKeywordChange={handleKeywordChange}
+          userSettings={userSettings}
         />
       )}
 

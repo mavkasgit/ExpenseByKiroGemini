@@ -6,6 +6,12 @@ export const keywordSchema = z.object({
     .max(100, 'Ключевое слово не должно превышать 100 символов')
     .trim()
     .toLowerCase(),
+  cyrillic_keyword: z.string()
+    .max(100, 'Кириллическое слово не должно превышать 100 символов')
+    .trim()
+    .toLowerCase()
+    .nullable()
+    .optional(),
   category_id: z.string()
     .uuid('Неверный формат ID категории')
 })
@@ -16,6 +22,12 @@ export const updateKeywordSchema = z.object({
     .max(100, 'Ключевое слово не должно превышать 100 символов')
     .trim()
     .toLowerCase()
+    .optional(),
+  cyrillic_keyword: z.string()
+    .max(100, 'Кириллическое слово не должно превышать 100 символов')
+    .trim()
+    .toLowerCase()
+    .nullable()
     .optional(),
   category_id: z.string()
     .uuid('Неверный формат ID категории')

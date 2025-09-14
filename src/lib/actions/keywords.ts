@@ -11,17 +11,13 @@ export async function createKeyword(data: CreateKeywordData) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Проверяем данные
     const validatedData = keywordSchema.parse(data)
 
-    // Проверяем, что категория принадлежит пользователю
     const { data: category, error: categoryError } = await supabase
       .from('categories')
       .select('id')
@@ -33,26 +29,25 @@ export async function createKeyword(data: CreateKeywordData) {
       return { error: 'Категория не найдена' }
     }
 
-    // Создаем ключевое слово
     const { data: keyword, error } = await supabase
       .from('category_keywords')
       .insert({
         user_id: user.id,
         keyword: validatedData.keyword,
+        cyrillic_keyword: validatedData.cyrillic_keyword,
         category_id: validatedData.category_id
       })
       .select()
       .single()
 
     if (error) {
-      if (error.code === '23505') { // unique constraint violation
+      if (error.code === '23505') { 
         return { error: 'Это ключевое слово уже существует' }
       }
       console.error('Ошибка создания ключевого слова:', error)
       return { error: 'Не удалось создать ключевое слово' }
     }
 
-    // Удаляем из неопознанных ключевых слов, если оно там есть
     await supabase
       .from('unrecognized_keywords')
       .delete()
@@ -72,17 +67,13 @@ export async function updateKeyword(id: string, data: UpdateKeywordData) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Проверяем данные
     const validatedData = updateKeywordSchema.parse(data)
 
-    // Если обновляется категория, проверяем что она принадлежит пользователю
     if (validatedData.category_id) {
       const { data: category, error: categoryError } = await supabase
         .from('categories')
@@ -96,7 +87,6 @@ export async function updateKeyword(id: string, data: UpdateKeywordData) {
       }
     }
 
-    // Обновляем ключевое слово
     const { data: keyword, error } = await supabase
       .from('category_keywords')
       .update(validatedData)
@@ -106,7 +96,7 @@ export async function updateKeyword(id: string, data: UpdateKeywordData) {
       .single()
 
     if (error) {
-      if (error.code === '23505') { // unique constraint violation
+      if (error.code === '23505') { 
         return { error: 'Это ключевое слово уже существует' }
       }
       console.error('Ошибка обновления ключевого слова:', error)
@@ -126,14 +116,11 @@ export async function deleteKeyword(id: string) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Удаляем ключевое слово
     const { error } = await supabase
       .from('category_keywords')
       .delete()
@@ -158,14 +145,11 @@ export async function getAllKeywords() {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Получаем ключевые слова с информацией о категориях
     const { data: keywords, error } = await supabase
       .from('category_keywords')
       .select(`
@@ -197,14 +181,11 @@ export async function getKeywordsByCategory(categoryId: string) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Получаем ключевые слова для категории
     const { data: keywords, error } = await supabase
       .from('category_keywords')
       .select('*')
@@ -229,17 +210,13 @@ export async function assignCategoryToKeyword(data: AssignKeywordData) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Проверяем данные
     const validatedData = assignKeywordToCategorySchema.parse(data)
 
-    // Проверяем, что категория принадлежит пользователю
     const { data: category, error: categoryError } = await supabase
       .from('categories')
       .select('id')
@@ -251,34 +228,30 @@ export async function assignCategoryToKeyword(data: AssignKeywordData) {
       return { error: 'Категория не найдена' }
     }
 
-    // Добавляем ключевое слово к категории
     const { data: keyword, error: keywordError } = await supabase
       .from('category_keywords')
       .insert({
         user_id: user.id,
         keyword: validatedData.keyword,
         category_id: validatedData.category_id,
-
       })
       .select()
       .single()
 
     if (keywordError) {
-      if (keywordError.code === '23505') { // unique constraint violation
+      if (keywordError.code === '23505') {
         return { error: 'Это ключевое слово уже назначено категории' }
       }
       console.error('Ошибка назначения ключевого слова:', keywordError)
       return { error: 'Не удалось назначить ключевое слово' }
     }
 
-    // Удаляем из неопознанных ключевых слов
     await supabase
       .from('unrecognized_keywords')
       .delete()
       .eq('keyword', validatedData.keyword)
       .eq('user_id', user.id)
 
-    // Перекатегоризируем все неопознанные траты с этим ключевым словом
     await recategorizeExpensesByKeyword(validatedData.keyword, validatedData.category_id)
 
     revalidatePath('/categories')
@@ -291,63 +264,45 @@ export async function assignCategoryToKeyword(data: AssignKeywordData) {
   }
 }
 
-
-
 // Автоматическая категоризация расхода по описанию
 export async function categorizeExpense(description: string): Promise<CategorizationResult> {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
-      return {
-        category_id: null,
-        matched_keywords: [],
-        auto_categorized: false
-      }
+      return { category_id: null, matched_keywords: [], auto_categorized: false }
     }
 
-    // Получаем все ключевые слова пользователя
     const { data: keywords, error } = await supabase
       .from('category_keywords')
-      .select('keyword, category_id')
+      .select('keyword, cyrillic_keyword, category_id')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
 
     if (error || !keywords) {
-      return {
-        category_id: null,
-        matched_keywords: [],
-        auto_categorized: false
-      }
+      return { category_id: null, matched_keywords: [], auto_categorized: false }
     }
 
     const descriptionLower = description.toLowerCase()
     const matches: KeywordMatch[] = []
 
-    // Ищем совпадения ключевых слов
-    for (const keyword of keywords) {
-      if (descriptionLower.includes(keyword.keyword.toLowerCase())) {
+    for (const kw of keywords) {
+      const latinMatch = kw.keyword && descriptionLower.includes(kw.keyword.toLowerCase());
+      const cyrillicMatch = kw.cyrillic_keyword && descriptionLower.includes(kw.cyrillic_keyword.toLowerCase());
+
+      if (latinMatch || cyrillicMatch) {
         matches.push({
-          keyword: keyword.keyword,
-          category_id: keyword.category_id!
+          keyword: kw.keyword,
+          category_id: kw.category_id!
         })
       }
     }
 
     if (matches.length === 0) {
-      // Сохраняем неопознанные ключевые слова
       await saveUnrecognizedKeywords(description)
-      return {
-        category_id: null,
-        matched_keywords: [],
-        auto_categorized: false
-      }
+      return { category_id: null, matched_keywords: [], auto_categorized: false }
     }
 
-    // Берем первое найденное совпадение
     const bestMatch = matches[0]
 
     return {
@@ -357,11 +312,7 @@ export async function categorizeExpense(description: string): Promise<Categoriza
     }
   } catch (error) {
     console.error('Ошибка категоризации:', error)
-    return {
-      category_id: null,
-      matched_keywords: [],
-      auto_categorized: false
-    }
+    return { category_id: null, matched_keywords: [], auto_categorized: false }
   }
 }
 
@@ -370,38 +321,34 @@ export async function saveUnrecognizedKeywords(description: string) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Извлекаем ключевые слова из описания
     const words = extractKeywords(description)
-
     if (words.length === 0) {
       return { success: true, message: 'Нет ключевых слов для сохранения' }
     }
 
-    // Получаем уже существующие ключевые слова пользователя
     const { data: existingKeywords } = await supabase
       .from('category_keywords')
-      .select('keyword')
+      .select('keyword, cyrillic_keyword')
       .eq('user_id', user.id)
 
-    const existingKeywordSet = new Set(existingKeywords?.map(k => k.keyword) || [])
+    const existingKeywordSet = new Set<string>()
+    existingKeywords?.forEach(k => {
+      if (k.keyword) existingKeywordSet.add(k.keyword.toLowerCase())
+      if (k.cyrillic_keyword) existingKeywordSet.add(k.cyrillic_keyword.toLowerCase())
+    })
 
-    // Фильтруем только новые ключевые слова
-    const newWords = words.filter(word => !existingKeywordSet.has(word))
+    const newWords = words.filter(word => !existingKeywordSet.has(word.toLowerCase()))
 
     if (newWords.length === 0) {
       return { success: true, message: 'Все ключевые слова уже известны' }
     }
 
-    // Сохраняем или обновляем неопознанные ключевые слова
     for (const word of newWords) {
-      // Сначала проверяем, существует ли уже такое ключевое слово
       const { data: existing } = await supabase
         .from('unrecognized_keywords')
         .select('id, frequency')
@@ -410,7 +357,6 @@ export async function saveUnrecognizedKeywords(description: string) {
         .single()
 
       if (existing) {
-        // Обновляем существующее
         await supabase
           .from('unrecognized_keywords')
           .update({
@@ -419,7 +365,6 @@ export async function saveUnrecognizedKeywords(description: string) {
           })
           .eq('id', existing.id)
       } else {
-        // Создаем новое
         await supabase
           .from('unrecognized_keywords')
           .insert({
@@ -444,14 +389,11 @@ export async function getUnrecognizedKeywords() {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Получаем неопознанные ключевые слова, отсортированные по частоте
     const { data: keywords, error } = await supabase
       .from('unrecognized_keywords')
       .select('*')
@@ -475,14 +417,11 @@ async function recategorizeExpensesByKeyword(keyword: string, categoryId: string
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Находим все неопознанные траты, содержащие это ключевое слово
     const { data: expenses } = await supabase
       .from('expenses')
       .select('id, description')
@@ -493,7 +432,6 @@ async function recategorizeExpensesByKeyword(keyword: string, categoryId: string
     if (expenses && expenses.length > 0) {
       const expenseIds = expenses.map(e => e.id)
 
-      // Обновляем статус и категорию
       await supabase
         .from('expenses')
         .update({
@@ -518,14 +456,11 @@ export async function deleteUnrecognizedKeyword(id: string) {
   const supabase = await createServerClient()
 
   try {
-    // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
     if (userError || !user) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    // Удаляем неопознанное ключевое слово
     const { error } = await supabase
       .from('unrecognized_keywords')
       .delete()

@@ -87,7 +87,7 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
           </button>
         )}
         <span className="text-lg">{iconMap[category.icon || 'other'] || '📦'}</span>
-        <span className="font-medium text-gray-800 text-sm truncate">{category.name}</span>
+        <span className="font-medium text-gray-800 text-sm truncate group-hover:text-indigo-600">{category.name}</span>
       </div>
       {!isOverlay && (
         <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
@@ -112,7 +112,7 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
         ref={setNodeRef}
         style={{ ...style, backgroundColor: category.color ? `${category.color}20` : '#f3f4f6' }}
         onClick={handleCardClick}
-        className={`group rounded-lg p-3 transition-all duration-200 flex items-center justify-between ${isDraggable ? 'cursor-pointer' : ''} hover:bg-gray-500/10 ${
+        className={`group rounded-lg p-3 transition-all duration-200 flex items-center justify-between ${isDraggable ? 'cursor-pointer' : ''} hover:bg-indigo-50 ${
           isDragging ? 'opacity-30' : 'opacity-100'
         }`}
       >
