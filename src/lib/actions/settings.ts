@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 
 export interface UserSettings {
   enable_bilingual_keywords?: boolean
+  enable_bilingual_cities?: boolean
 }
 
 export async function getUserSettings(): Promise<{ settings?: UserSettings; error?: string }> {

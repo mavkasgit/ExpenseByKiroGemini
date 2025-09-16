@@ -46,6 +46,8 @@ export async function createExpense(data: CreateExpenseData) {
         description: validatedData.description || null,
         notes: validatedData.notes || null,
         category_id: finalCategoryId || null,
+        city: validatedData.city || null,
+        cyrillic_city: validatedData.cyrillic_city || null,
         expense_date: validatedData.expense_date,
         expense_time: validatedData.expense_time || null,
         input_method: validatedData.input_method,
@@ -103,6 +105,8 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
     // Если изменяется описание, пересчитываем категоризацию
     let updateData: any = {
       ...validatedData,
+      city: validatedData.city || null,
+      cyrillic_city: validatedData.cyrillic_city || null,
       updated_at: new Date().toISOString()
     }
 
@@ -374,6 +378,8 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
           description: validatedData.description || null,
           notes: validatedData.notes || null,
           category_id: finalCategoryId,
+          city: validatedData.city || null,
+          cyrillic_city: validatedData.cyrillic_city || null,
           expense_date: validatedData.expense_date,
           expense_time: validatedData.expense_time || null,
           input_method: 'bulk_table',

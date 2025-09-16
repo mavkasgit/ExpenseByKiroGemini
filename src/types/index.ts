@@ -228,6 +228,8 @@ export type CreateExpenseData = {
   expense_time?: string | null // Время транзакции (HH:MM)
   input_method?: 'single' | 'bulk_table'
   batch_id?: string
+  city?: string | null
+  cyrillic_city?: string | null
 }
 
 export type CreateCategoryData = {
@@ -244,6 +246,8 @@ export type BulkExpenseRow = {
   category_id: string
   expense_date: string
   tempId?: string // для отслеживания в UI
+  city?: string
+  cyrillic_city?: string
 }
 
 
@@ -316,6 +320,17 @@ export type UpdateKeywordData = {
   keyword?: string
   cyrillic_keyword?: string | null
   category_id?: string
+}
+
+export type UpdateExpenseData = {
+  amount?: number
+  description?: string
+  notes?: string
+  category_id?: string
+  expense_date?: string
+  expense_time?: string | null
+  city?: string | null
+  cyrillic_city?: string | null
 }
 
 export type AssignKeywordData = {

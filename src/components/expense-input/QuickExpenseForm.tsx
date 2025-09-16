@@ -10,13 +10,15 @@ import { createExpense } from '@/lib/actions/expenses'
 import { getCurrentDateISO, getCurrentTimeHHMM } from '@/lib/utils/dateUtils'
 import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
+import { getUserSettings, UserSettings } from '@/lib/actions/settings'
+import { transliterate } from '@/lib/utils/transliteration'
 
 interface QuickExpenseFormProps {
   onSuccess?: (expense: any) => void
   className?: string
 }
 
-export function QuickExpenseForm({ 
+export function QuickExpenseForm({
   onSuccess,
   className = '' 
 }: QuickExpenseFormProps) {
@@ -24,22 +26,28 @@ export function QuickExpenseForm({
   const { showToast } = useToast()
   const amountInputRef = useRef<HTMLInputElement>(null)
 
-  // Состояние формы - убираем category_id
   const [formData, setFormData] = useState({
     amount: 0,
     description: '',
     notes: '',
     expense_date: getCurrentDateISO(),
     expense_time: getCurrentTimeHHMM(),
+    city: '',
+    cyrillic_city: '',
     input_method: 'single' as const
   })
 
-  // Фокус на поле суммы при монтировании
+  const [userSettings, setUserSettings] = useState<UserSettings>({});
+
   useEffect(() => {
-    if (amountInputRef.current) {
-      amountInputRef.current.focus()
-    }
-  }, [])
+    const fetchSettings = async () => {
+      const result = await getUserSettings();
+      if (result.settings) {
+        setUserSettings(result.settings);
+      }
+    };
+    fetchSettings();
+  }, []);
 
   // Обработка изменения описания
   const handleDescriptionChange = (value: string) => {
@@ -69,6 +77,8 @@ export function QuickExpenseForm({
           notes: formData.notes || undefined,
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
+          city: formData.city || undefined,
+          cyrillic_city: formData.cyrillic_city || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит
         }
@@ -94,6 +104,8 @@ export function QuickExpenseForm({
           notes: '',
           expense_date: prev.expense_date, // Оставляем дату
           expense_time: getCurrentTimeHHMM(), // Обновляем время на текущее
+          city: '',
+          cyrillic_city: '',
           input_method: 'single'
         }))
 
@@ -138,9 +150,9 @@ export function QuickExpenseForm({
               step="0.01"
               min="0"
               value={formData.amount || ''}
-              onChange={(e) => setFormData(prev => ({ 
-                ...prev, 
-                amount: parseFloat(e.target.value) || 0 
+              onChange={(e) => setFormData(prev => ({
+                ...prev,
+                amount: parseFloat(e.target.value) || 0
               }))}
               onKeyPress={handleKeyPress}
               placeholder="Сумма"
@@ -167,9 +179,9 @@ export function QuickExpenseForm({
           <Input
             type="text"
             value={formData.notes}
-            onChange={(e) => setFormData(prev => ({ 
-              ...prev, 
-              notes: e.target.value 
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              notes: e.target.value
             }))}
             onKeyPress={handleKeyPress}
             placeholder="Примечание (необязательно)"
@@ -178,15 +190,48 @@ export function QuickExpenseForm({
           />
         </div>
 
+        {/* Город */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Input
+              type="text"
+              value={formData.city}
+              onChange={(e) => {
+                setFormData(prev => ({ ...prev, city: e.target.value }));
+                if (userSettings.enable_bilingual_cities) {
+                  setFormData(prev => ({ ...prev, cyrillic_city: transliterate(e.target.value) }));
+                }
+              }}
+              onKeyPress={handleKeyPress}
+              placeholder="Город (латиница)"
+              disabled={isPending}
+              maxLength={100}
+            />
+          </div>
+          {userSettings.enable_bilingual_cities && (
+            <div>
+              <Input
+                type="text"
+                value={formData.cyrillic_city}
+                onChange={(e) => setFormData(prev => ({ ...prev, cyrillic_city: e.target.value }))}
+                onKeyPress={handleKeyPress}
+                placeholder="Город (кириллица)"
+                disabled={isPending}
+                maxLength={100}
+              />
+            </div>
+          )}
+        </div>
+
         {/* Дата и время */}
         <div className="grid grid-cols-2 gap-3">
           {/* Дата */}
           <div>
             <DatePicker
               value={formData.expense_date}
-              onChange={(value) => setFormData(prev => ({ 
-                ...prev, 
-                expense_date: value 
+              onChange={(value) => setFormData(prev => ({
+                ...prev,
+                expense_date: value
               }))}
               onKeyPress={handleKeyPress}
               disabled={isPending}
@@ -198,9 +243,9 @@ export function QuickExpenseForm({
           <div>
             <TimeInput
               value={formData.expense_time}
-              onChange={(value) => setFormData(prev => ({ 
-                ...prev, 
-                expense_time: value 
+              onChange={(value) => setFormData(prev => ({
+                ...prev,
+                expense_time: value
               }))}
               onKeyPress={handleKeyPress}
               disabled={isPending}
