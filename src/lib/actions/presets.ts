@@ -25,13 +25,20 @@ export async function applyPreset(presetName: string) {
     await supabase.from('category_groups').delete().eq('user_id', user.id)
 
     // 2. Создаем новые группы
-    const groupsToInsert = preset.groups.map((group, index) => ({
-      user_id: user.id,
-      name: group.name,
-      icon: group.icon,
-      color: getRandomColor(),
-      sort_order: index
-    }))
+    const groupColorMap = new Map<string, string>()
+
+    const groupsToInsert = preset.groups.map((group, index) => {
+      const color = group.color || getRandomColor()
+      groupColorMap.set(group.name, color)
+
+      return {
+        user_id: user.id,
+        name: group.name,
+        icon: group.icon,
+        color,
+        sort_order: index
+      }
+    })
 
     const { data: createdGroups, error: groupsError } = await supabase
       .from('category_groups')
@@ -46,13 +53,25 @@ export async function applyPreset(presetName: string) {
     const groupNameToIdMap = new Map(createdGroups.map(g => [g.name, g.id]))
 
     // 4. Создаем новые категории с привязкой к ID групп
-    const categoriesToInsert = preset.categories.map(category => ({
-      user_id: user.id,
-      name: category.name,
-      icon: category.icon,
-      color: getRandomColor(),
-      category_group_id: category.group ? groupNameToIdMap.get(category.group) : null
-    }))
+    const categoriesToInsert = preset.categories.map(category => {
+      const groupId = category.group ? groupNameToIdMap.get(category.group) : null
+
+      if (category.group && !groupId) {
+        throw new Error(
+          `Для категории "${category.name}" не найдена группа "${category.group}" в пресете "${preset.name}"`
+        )
+      }
+
+      const derivedColor = category.group ? groupColorMap.get(category.group) : undefined
+
+      return {
+        user_id: user.id,
+        name: category.name,
+        icon: category.icon,
+        color: derivedColor ?? getRandomColor(),
+        category_group_id: groupId
+      }
+    })
 
     const { data: createdCategories, error: categoriesError } = await supabase
       .from('categories')
@@ -67,7 +86,7 @@ export async function applyPreset(presetName: string) {
     return { success: true, newGroups: createdGroups, newCategories: createdCategories }
 
   } catch (error: any) {
-    console.error("Error in applyPreset:", error);
-    return { error: error.message || 'Неизвестная ошибка сервера' };
+    console.error('Error in applyPreset:', error)
+    return { error: error.message || 'Неизвестная ошибка сервера' }
   }
 }

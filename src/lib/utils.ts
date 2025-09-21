@@ -5,17 +5,57 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
+type CurrencyFormatMode = 'currency' | 'code' | 'name' | 'plain'
+
+interface FormatCurrencyOptions {
+  locale?: string
+  currency?: string
+  mode?: CurrencyFormatMode
+  minimumFractionDigits?: number
+  maximumFractionDigits?: number
+}
+
+export function formatCurrency(amount: number, options: FormatCurrencyOptions = {}): string {
+  const {
+    locale = 'ru-RU',
+    currency = 'RUB',
+    mode = 'currency',
+    minimumFractionDigits = 2,
+    maximumFractionDigits = 2
+  } = options
+
+  if (mode === 'plain') {
+    return new Intl.NumberFormat(locale, {
+      style: 'decimal',
+      minimumFractionDigits,
+      maximumFractionDigits
+    }).format(amount)
+  }
+
+  const currencyDisplay = mode === 'currency' ? 'symbol' : mode
+
+  return new Intl.NumberFormat(locale, {
     style: 'currency',
-    currency: 'USD',
+    currency,
+    currencyDisplay,
+    minimumFractionDigits,
+    maximumFractionDigits
   }).format(amount)
 }
 
-export function formatDate(date: string | Date): string {
-  return new Intl.DateTimeFormat('en-US', {
+interface FormatDateOptions extends Intl.DateTimeFormatOptions {
+  locale?: string
+}
+
+export function formatDate(date: string | Date, options: FormatDateOptions = {}): string {
+  const { locale = 'ru-RU', ...formatOptions } = options
+
+  const dateInstance = date instanceof Date ? date : new Date(date)
+
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
-    month: 'short',
+    month: 'long',
     day: 'numeric',
-  }).format(new Date(date))
+    ...formatOptions
+  }).format(dateInstance)
 }

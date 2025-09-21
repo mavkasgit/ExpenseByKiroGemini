@@ -5,63 +5,158 @@ import { cn } from '@/lib/utils'
 
 // Определяем пропсы для нашего кастомного свитча, наследуя стандартные атрибуты инпута
 interface SwitchProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  // Мы можем добавить сюда специфичные для свитча пропсы в будущем, если понадобится
+  onCheckedChange?: (checked: boolean) => void
+  /**
+   * Управляет визуальным размером переключателя.
+   * `md` совпадает с прежним вариантом, `sm` и `lg` дают компактный и крупный варианты.
+   */
+  size?: 'sm' | 'md' | 'lg'
+  /**
+   * Подпись рядом с переключателем. Делает компонент самодостаточным и улучшает доступность.
+   */
+  label?: React.ReactNode
+  /**
+   * Дополнительное описание под подписью, помогает раскрыть контекст переключателя.
+   */
+  description?: React.ReactNode
 }
 
+const trackSizes = {
+  sm: 'h-5 w-9 px-[3px]',
+  md: 'h-6 w-11 px-[4px]',
+  lg: 'h-8 w-14 px-[6px]'
+} as const
+
+const thumbSizes = {
+  sm: 'h-4 w-4',
+  md: 'h-5 w-5',
+  lg: 'h-6 w-6'
+} as const
+
+const thumbTranslations = {
+  sm: 'translate-x-[14px]',
+  md: 'translate-x-[20px]',
+  lg: 'translate-x-[26px]'
+} as const
+
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
-  ({ className, ...props }, ref) => {
-    // Используем внутреннее состояние для отслеживания, включен ли свитч
+  (
+    {
+      className,
+      checked,
+      defaultChecked,
+      onCheckedChange,
+      onChange,
+      size = 'md',
+      label,
+      description,
+      id: providedId,
+      disabled,
+      ...rest
+    },
+    ref
+  ) => {
     const [isChecked, setIsChecked] = React.useState(
-      props.checked ?? props.defaultChecked ?? false
+      checked ?? defaultChecked ?? false
     )
 
-    // Синхронизируем внутреннее состояние с пропсами
     React.useEffect(() => {
-      if (props.checked !== undefined) {
-        setIsChecked(props.checked);
+      if (checked !== undefined) {
+        setIsChecked(checked)
       }
-    }, [props.checked]);
+    }, [checked])
 
-    // Обработчик изменений, который вызывает внешний onChange
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      // В управляемом режиме, родительский компонент обновит состояние через props.
-      // В неуправляемом режиме, мы могли бы обновить внутреннее состояние, но текущая реализация
-      // фокусируется на управляемом сценарии, который является основным для этого приложения.
-      props.onChange?.(e)
+      if (checked === undefined) {
+        setIsChecked(e.target.checked)
+      }
+
+      onCheckedChange?.(e.target.checked)
+      onChange?.(e)
     }
 
-    // Генерируем уникальный ID для связи label и input, это важно для доступности
-    const id = React.useId()
+    const generatedId = React.useId()
+    const controlId = providedId ?? generatedId
+    const descriptionId = description ? `${controlId}-description` : undefined
 
     return (
-      <div className={cn('inline-flex items-center', className)}>
-        <input
-          type="checkbox"
-          id={id}
-          ref={ref}
-          {...props}
-          checked={isChecked} // Контролируем состояние инпута
-          onChange={handleChange}
-          className="sr-only" // Скрываем стандартный чекбокс
-        />
-        <label
-          htmlFor={id}
-          className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-            isChecked ? 'bg-primary' : 'bg-input',
-            'disabled:cursor-not-allowed disabled:opacity-50'
-          )}
-        >
+      <label
+        htmlFor={controlId}
+        className={cn(
+          'group inline-flex w-fit cursor-pointer items-start gap-3',
+          disabled && 'cursor-not-allowed opacity-60',
+          className
+        )}
+      >
+        <span className="relative flex items-center justify-center">
+          <span
+            className={cn(
+              'absolute h-full w-full rounded-full blur-xl transition-opacity duration-300',
+              isChecked ? 'opacity-70 bg-primary/30' : 'opacity-0 bg-slate-300/30',
+              !disabled && 'group-hover:opacity-80'
+            )}
+            aria-hidden
+          />
+          <input
+            type="checkbox"
+            id={controlId}
+            ref={ref}
+            {...rest}
+            disabled={disabled}
+            checked={isChecked}
+            onChange={handleChange}
+            className="peer sr-only"
+            aria-describedby={descriptionId}
+          />
           <span
             aria-hidden="true"
             className={cn(
-              'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform',
-              isChecked ? 'translate-x-5' : 'translate-x-0'
+              'relative inline-flex shrink-0 items-center rounded-full border border-transparent bg-muted transition-all duration-300 ease-out',
+              trackSizes[size],
+              disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+              'peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary/45 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white',
+              isChecked &&
+                'bg-gradient-to-r from-primary to-primary/70 shadow-[0_10px_30px_-12px_rgba(79,70,229,0.55)]'
             )}
-          />
-        </label>
-      </div>
+          >
+            <span
+              className={cn(
+                'absolute inset-0 rounded-full bg-primary/20 opacity-0 transition-opacity duration-300 ease-out',
+                isChecked && 'opacity-100',
+                !disabled && 'group-hover:opacity-60'
+              )}
+            />
+            <span
+              className={cn(
+                'relative inline-flex items-center justify-center rounded-full bg-background text-xs font-semibold text-muted-foreground shadow-sm ring-0 transition-all duration-300 ease-out',
+                thumbSizes[size],
+                isChecked ? thumbTranslations[size] : 'translate-x-0',
+                isChecked && 'text-primary'
+              )}
+            >
+              <span className="sr-only">{isChecked ? 'Включено' : 'Выключено'}</span>
+            </span>
+          </span>
+        </span>
+
+        {(label || description) && (
+          <span className="flex min-w-0 flex-col leading-none">
+            {label && (
+              <span className="text-sm font-medium text-slate-900 transition-colors duration-200 group-hover:text-primary">
+                {label}
+              </span>
+            )}
+            {description && (
+              <span
+                id={descriptionId}
+                className="mt-1 text-xs text-slate-500"
+              >
+                {description}
+              </span>
+            )}
+          </span>
+        )}
+      </label>
     )
   }
 )
