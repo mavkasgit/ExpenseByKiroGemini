@@ -4,7 +4,17 @@ import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
 import { keywordSchema, updateKeywordSchema, assignKeywordToCategorySchema } from '@/lib/validations/keywords'
 import { extractKeywords } from '@/lib/utils/keywords'
-import type { CreateKeywordData, UpdateKeywordData, AssignKeywordData, CategoryKeyword, UnrecognizedKeyword, CategorizationResult, KeywordMatch } from '@/types'
+import type {
+  CreateKeywordData,
+  UpdateKeywordData,
+  AssignKeywordData,
+  CategoryKeyword,
+  CategoryKeywordWithSynonyms,
+  KeywordSynonym,
+  UnrecognizedKeyword,
+  CategorizationResult,
+  KeywordMatch
+} from '@/types'
 
 // Создание нового ключевого слова для категории
 export async function createKeyword(data: CreateKeywordData) {
@@ -158,6 +168,11 @@ export async function getAllKeywords() {
           name,
           color,
           icon
+        ),
+        keyword_synonyms (
+          id,
+          synonym,
+          created_at
         )
       `)
       .eq('user_id', user.id)
@@ -187,7 +202,14 @@ export async function getKeywordsByCategory(categoryId: string) {
 
     const { data: keywords, error } = await supabase
       .from('category_keywords')
-      .select('*')
+      .select(`
+        *,
+        keyword_synonyms (
+          id,
+          synonym,
+          created_at
+        )
+      `)
       .eq('category_id', categoryId)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
@@ -275,7 +297,15 @@ export async function categorizeExpense(description: string): Promise<Categoriza
 
     const { data: keywords, error } = await supabase
       .from('category_keywords')
-      .select('keyword, category_id')
+      .select(`
+        id,
+        keyword,
+        category_id,
+        keyword_synonyms (
+          id,
+          synonym
+        )
+      `)
       .eq('user_id', user.id)
 
     if (error || !keywords) {
@@ -284,15 +314,33 @@ export async function categorizeExpense(description: string): Promise<Categoriza
 
     const descriptionLower = description.toLowerCase()
     const matches: KeywordMatch[] = []
+    const seenLabels = new Set<string>()
 
-    for (const kw of keywords) {
-      const latinMatch = kw.keyword && descriptionLower.includes(kw.keyword.toLowerCase());
+    const addMatch = (categoryId: string | null | undefined, label: string) => {
+      if (!categoryId) return
+      if (seenLabels.has(label)) return
+      seenLabels.add(label)
+      matches.push({
+        keyword: label,
+        category_id: categoryId
+      })
+    }
 
-      if (latinMatch) {
-        matches.push({
-          keyword: kw.keyword,
-          category_id: kw.category_id!
-        })
+    for (const kw of keywords as CategoryKeywordWithSynonyms[]) {
+      const baseKeyword = kw.keyword?.toLowerCase()
+      if (baseKeyword && descriptionLower.includes(baseKeyword)) {
+        addMatch(kw.category_id, kw.keyword)
+        continue
+      }
+
+      const synonyms = (kw.keyword_synonyms || []) as KeywordSynonym[]
+      for (const synonym of synonyms) {
+        const normalizedSynonym = synonym.synonym?.toLowerCase()
+        if (normalizedSynonym && descriptionLower.includes(normalizedSynonym)) {
+          const label = `${kw.keyword} (${synonym.synonym})`
+          addMatch(kw.category_id, label)
+          break
+        }
       }
     }
 
@@ -314,6 +362,7 @@ export async function categorizeExpense(description: string): Promise<Categoriza
   }
 }
 
+
 // Сохранение неопознанных ключевых слов
 export async function saveUnrecognizedKeywords(description: string) {
   const supabase = await createServerClient()
@@ -331,12 +380,19 @@ export async function saveUnrecognizedKeywords(description: string) {
 
     const { data: existingKeywords } = await supabase
       .from('category_keywords')
-      .select('keyword')
+      .select(`
+        keyword,
+        keyword_synonyms (synonym)
+      `)
       .eq('user_id', user.id)
 
     const existingKeywordSet = new Set<string>()
-    existingKeywords?.forEach(k => {
+    existingKeywords?.forEach((k: CategoryKeywordWithSynonyms) => {
       if (k.keyword) existingKeywordSet.add(k.keyword.toLowerCase())
+      const synonyms = (k.keyword_synonyms || []) as KeywordSynonym[]
+      synonyms.forEach(s => {
+        if (s.synonym) existingKeywordSet.add(s.synonym.toLowerCase())
+      })
     })
 
     const newWords = words.filter(word => !existingKeywordSet.has(word.toLowerCase()))

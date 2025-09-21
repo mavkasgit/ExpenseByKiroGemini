@@ -74,6 +74,29 @@ export type Database = {
           user_id?: string | null
         }
       }
+      keyword_synonyms: {
+        Row: {
+          created_at: string | null
+          id: string
+          keyword_id: string
+          synonym: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          keyword_id: string
+          synonym: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          keyword_id?: string
+          synonym?: string
+          user_id?: string | null
+        }
+      }
       expenses: {
         Row: {
           amount: number
@@ -195,6 +218,29 @@ export type Database = {
           user_id?: string | null
         }
       }
+      city_synonyms: {
+        Row: {
+          city: string
+          created_at: string | null
+          id: string
+          synonym: string
+          user_id: string | null
+        }
+        Insert: {
+          city: string
+          created_at?: string | null
+          id?: string
+          synonym: string
+          user_id?: string | null
+        }
+        Update: {
+          city?: string
+          created_at?: string | null
+          id?: string
+          synonym?: string
+          user_id?: string | null
+        }
+      }
     }
   }
 }
@@ -205,7 +251,13 @@ export type CategoryGroup = Database['public']['Tables']['category_groups']['Row
 export type Expense = Database['public']['Tables']['expenses']['Row']
 
 export type CategoryKeyword = Database['public']['Tables']['category_keywords']['Row']
+export type KeywordSynonym = Database['public']['Tables']['keyword_synonyms']['Row']
 export type UnrecognizedKeyword = Database['public']['Tables']['unrecognized_keywords']['Row']
+export type CitySynonym = Database['public']['Tables']['city_synonyms']['Row']
+
+export type CategoryKeywordWithSynonyms = CategoryKeyword & {
+  keyword_synonyms?: KeywordSynonym[]
+}
 
 export type ExpenseWithCategory = Expense & {
   category: Category | null

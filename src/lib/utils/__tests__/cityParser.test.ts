@@ -1,10 +1,15 @@
-import { extractCityFromDescription, batchExtractCities, getCityStats } from '../cityParser'
+import { extractCityFromDescription, batchExtractCities, getCityStats, syncCitySynonyms } from '../cityParser'
 
 describe('cityParser', () => {
   describe('extractCityFromDescription', () => {
+    beforeEach(() => {
+      syncCitySynonyms([])
+    })
+
     test('should extract city from "BY НАЗВАНИЕ, ГОРОД" format', () => {
       const result = extractCityFromDescription('BY SUPERMARKET LOGOYSK')
       expect(result.city).toBe('LOGOYSK')
+      expect(result.displayCity).toBe('Logoysk')
       expect(result.cleanDescription).toBe('Supermarket')
       expect(result.confidence).toBeGreaterThan(0.8)
     })
@@ -12,6 +17,7 @@ describe('cityParser', () => {
     test('should extract city from "MN ГОРОДBY НАЗВАНИЕ" format', () => {
       const result = extractCityFromDescription('MN LOGOYSKBY SHOP "MAYAK", LOGOYSK')
       expect(result.city).toBe('LOGOYSK')
+      expect(result.displayCity).toBe('Logoysk')
       expect(result.cleanDescription).toContain('Shop')
       expect(result.confidence).toBeGreaterThan(0.5)
     })
@@ -19,6 +25,7 @@ describe('cityParser', () => {
     test('should extract city from "BY НАЗВАНИЕ, ГОРОД" format', () => {
       const result = extractCityFromDescription('BY KEBAB FACTORY, MINSK')
       expect(result.city).toBe('MINSK')
+      expect(result.displayCity).toBe('Minsk')
       expect(result.cleanDescription).toBe('Kebab Factory')
       expect(result.confidence).toBeGreaterThan(0.8)
     })
@@ -43,6 +50,17 @@ describe('cityParser', () => {
       const result = extractCityFromDescription('BY "SUPER MARKET", MINSK')
       expect(result.cleanDescription).toBe('Super Market')
       expect(result.city).toBe('MINSK')
+      expect(result.displayCity).toBe('Minsk')
+    })
+
+    test('should resolve synonym to canonical city', () => {
+      syncCitySynonyms([{ city: 'Minsk', synonym: 'Минск' }])
+
+      const result = extractCityFromDescription('BY SUPERMARKET, Минск')
+      expect(result.city).toBe('MINSK')
+      expect(result.displayCity).toBe('Minsk (Минск)')
+      expect(result.matchedSynonym).toBe('Минск')
+      expect(result.confidence).toBeGreaterThan(0.5)
     })
   })
 
@@ -57,7 +75,9 @@ describe('cityParser', () => {
       const results = batchExtractCities(descriptions)
       expect(results).toHaveLength(3)
       expect(results[0].city).toBe('LOGOYSK')
+      expect(results[0].displayCity).toBe('Logoysk')
       expect(results[2].city).toBe('MINSK')
+      expect(results[2].displayCity).toBe('Minsk')
     })
   })
 
@@ -69,10 +89,10 @@ describe('cityParser', () => {
         'BY CAFE, MINSK',
         'BY STORE, LOGOYSK'
       ]
-      
+
       const stats = getCityStats(descriptions)
-      expect(stats['MINSK']).toBe(2)
-      expect(stats['LOGOYSK']).toBe(2)
+      expect(stats['Minsk']).toBe(2)
+      expect(stats['Logoysk']).toBe(2)
     })
   })
 })

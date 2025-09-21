@@ -311,7 +311,12 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     // ОПТИМИЗАЦИЯ: Получаем все ключевые слова один раз
     const { data: keywords } = await supabase
       .from('category_keywords')
-      .select('keyword, category_id')
+      .select(`
+        id,
+        keyword,
+        category_id,
+        keyword_synonyms (synonym)
+      `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -322,14 +327,26 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       }
 
       const descriptionLower = description.toLowerCase()
-      
-      // Ищем первое совпадение
-      for (const keyword of keywords) {
-        if (descriptionLower.includes(keyword.keyword.toLowerCase())) {
+
+      for (const keyword of keywords as (typeof keywords)[number] & { keyword_synonyms?: { synonym: string }[] }) {
+        const base = keyword.keyword?.toLowerCase()
+        if (base && descriptionLower.includes(base)) {
           return {
             category_id: keyword.category_id,
             matched_keywords: [keyword.keyword],
             auto_categorized: true
+          }
+        }
+
+        const synonyms = keyword.keyword_synonyms || []
+        for (const synonym of synonyms) {
+          const normalized = synonym.synonym?.toLowerCase()
+          if (normalized && descriptionLower.includes(normalized)) {
+            return {
+              category_id: keyword.category_id,
+              matched_keywords: [`${keyword.keyword} (${synonym.synonym})`],
+              auto_categorized: true
+            }
           }
         }
       }
