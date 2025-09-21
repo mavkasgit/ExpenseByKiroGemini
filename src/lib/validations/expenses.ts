@@ -52,6 +52,7 @@ export const updateExpenseSchema = z.object({
     .optional(),
   category_id: z.string()
     .uuid('Неверный формат ID категории')
+    .nullable()
     .optional(),
   expense_date: z.string()
     .refine((date) => {

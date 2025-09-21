@@ -13,7 +13,8 @@ import type {
   KeywordSynonym,
   UnrecognizedKeyword,
   CategorizationResult,
-  KeywordMatch
+  KeywordMatch,
+  ExistingKeyword
 } from '@/types'
 
 // Создание нового ключевого слова для категории
@@ -387,9 +388,9 @@ export async function saveUnrecognizedKeywords(description: string) {
       .eq('user_id', user.id)
 
     const existingKeywordSet = new Set<string>()
-    existingKeywords?.forEach((k: CategoryKeywordWithSynonyms) => {
+    existingKeywords?.forEach((k: ExistingKeyword) => {
       if (k.keyword) existingKeywordSet.add(k.keyword.toLowerCase())
-      const synonyms = (k.keyword_synonyms || []) as KeywordSynonym[]
+      const synonyms = (k.keyword_synonyms || [])
       synonyms.forEach(s => {
         if (s.synonym) existingKeywordSet.add(s.synonym.toLowerCase())
       })

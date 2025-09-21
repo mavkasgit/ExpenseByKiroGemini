@@ -267,6 +267,11 @@ export type CategoryWithKeywords = Category & {
   keywords: CategoryKeyword[]
 }
 
+export type ExistingKeyword = {
+  keyword: string;
+  keyword_synonyms: { synonym: string }[];
+};
+
 // Form types
 export type CreateExpenseData = {
   amount: number

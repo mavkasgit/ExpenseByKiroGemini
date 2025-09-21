@@ -137,6 +137,7 @@ export function extractCityFromDescription(description: string): ParsedDescripti
       originalDescription: description || '',
       cleanDescription: description || '',
       city: null,
+      displayCity: null,
       confidence: 0
     }
   }

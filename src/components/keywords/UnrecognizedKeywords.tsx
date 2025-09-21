@@ -216,7 +216,7 @@ export function UnrecognizedKeywords({ categories, onKeywordAssigned }: Unrecogn
                 color: category.color || undefined
               }))}
               value={selectedCategoryId}
-              onChange={setSelectedCategoryId}
+              onChange={(v) => setSelectedCategoryId(v || '')}
               placeholder="Выберите категорию"
               required
             />

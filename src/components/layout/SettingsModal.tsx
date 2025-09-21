@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal, Button, useToast, Input, Switch } from '@/components/ui'
 import { deleteAllUserData, getUserSettings, updateUserSettings, UserSettings } from '@/lib/actions/settings';
-import { CitySynonymManager } from '@/components/settings/CitySynonymManager';
+
 import { SelectiveDeleteModal } from './SelectiveDeleteModal';
 
 interface SettingsModalProps {
@@ -92,11 +92,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <Modal isOpen={isOpen} onClose={onClose} title="Настройки">
         <div className="space-y-8">
 
-          {/* General Settings */}
-          <div className="space-y-4">
-            <h4 className="text-lg font-medium text-gray-900">Общие настройки</h4>
-            <CitySynonymManager />
-          </div>
+
 
           {/* Danger Zone */}
           <div className="space-y-4">

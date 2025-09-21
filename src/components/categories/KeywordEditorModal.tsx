@@ -37,6 +37,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
   const [synonymInputs, setSynonymInputs] = useState<Record<string, string>>({})
   const [synonymSaving, setSynonymSaving] = useState<Record<string, boolean>>({})
   const [synonymDeleting, setSynonymDeleting] = useState<Record<string, boolean>>({})
+  const [synonymErrors, setSynonymErrors] = useState<Record<string, string | null>>({})
 
   const [formData, setFormData] = useState({
     keyword: '',
@@ -57,15 +58,17 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
 
   const handleAddSynonym = useCallback(async (keywordId: string) => {
     const synonymValue = (synonymInputs[keywordId] || '').trim()
-    if (!synonymValue) {
-      setToast({ message: 'Введите синоним перед добавлением', type: 'error' })
+    if (synonymValue.length < 2) {
+      setSynonymErrors(prev => ({ ...prev, [keywordId]: 'Синоним должен содержать не менее 2 символов' }))
       return
     }
 
     setSynonymSaving(prev => ({ ...prev, [keywordId]: true }))
+    setSynonymErrors(prev => ({ ...prev, [keywordId]: null }))
     try {
       const result = await createKeywordSynonym({ keyword_id: keywordId, synonym: synonymValue })
       if (result.error) {
+        setSynonymErrors(prev => ({ ...prev, [keywordId]: result.error }))
         setToast({ message: result.error, type: 'error' })
       } else {
         setToast({ message: 'Синоним добавлен', type: 'success' })
@@ -74,7 +77,9 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       }
     } catch (err) {
       console.error('Failed to add synonym', err)
-      setToast({ message: 'Не удалось добавить синоним', type: 'error' })
+      const errorMessage = 'Не удалось добавить синоним'
+      setSynonymErrors(prev => ({ ...prev, [keywordId]: errorMessage }))
+      setToast({ message: errorMessage, type: 'error' })
     } finally {
       setSynonymSaving(prev => ({ ...prev, [keywordId]: false }))
     }
@@ -218,7 +223,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
           </div>
            <div>
             <label htmlFor="edit-category" className="block text-sm font-medium text-gray-700 mb-1">Категория *</label>
-            <SearchableSelect options={categories.map(c => ({ value: c.id, label: c.name, color: c.color || undefined }))} value={formData.category_id} onChange={(v) => setFormData({ ...formData, category_id: v })} required />
+            <SearchableSelect options={categories.map(c => ({ value: c.id, label: c.name, color: c.color || undefined }))} value={formData.category_id || ''} onChange={(v) => setFormData({ ...formData, category_id: v || '' })} required />
           </div>
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Отмена</Button>
@@ -286,6 +291,12 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
                         <Input
                           value={synonymInputs[keyword.id] || ''}
                           onChange={(e) => handleSynonymInputChange(keyword.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddSynonym(keyword.id);
+                            }
+                          }}
                           placeholder="Добавьте синоним"
                           disabled={isSubmitting || !!synonymSaving[keyword.id]}
                         />
@@ -293,7 +304,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
                           size="sm"
                           onClick={() => handleAddSynonym(keyword.id)}
                           isLoading={!!synonymSaving[keyword.id]}
-                          disabled={isSubmitting}
+                          disabled={isSubmitting || (synonymInputs[keyword.id] || '').trim().length < 2 || !!synonymSaving[keyword.id]}
                         >
                           Добавить
                         </Button>

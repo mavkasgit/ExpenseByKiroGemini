@@ -124,9 +124,16 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
 
     // Если категория изменяется вручную, обновляем статус
     if (validatedData.category_id !== undefined) {
-      updateData.status = validatedData.category_id ? 'categorized' : 'uncategorized'
-      updateData.auto_categorized = false
-      updateData.matched_keywords = null
+      if (validatedData.category_id === null) {
+        updateData.status = 'uncategorized'
+        updateData.category_id = null
+        updateData.auto_categorized = false
+        updateData.matched_keywords = null
+      } else {
+        updateData.status = 'categorized'
+        updateData.auto_categorized = false
+        updateData.matched_keywords = null
+      }
     }
 
     // Обновляем расход

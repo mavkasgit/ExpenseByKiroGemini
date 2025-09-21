@@ -40,6 +40,11 @@ export function StickyPageHeader({ title, description, userEmail }: StickyPageHe
       href: '/categories',
       label: '📂 Категории',
       isActive: pathname === '/categories'
+    },
+    {
+      href: '/cities',
+      label: '🏙️ Города',
+      isActive: pathname === '/cities'
     }
   ]
 

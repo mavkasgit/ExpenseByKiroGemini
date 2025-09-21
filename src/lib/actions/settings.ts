@@ -68,9 +68,11 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
     }
 
     if (options.deleteKeywords) {
-      const { error } = await supabase.from('keywords').delete().eq('user_id', user.id)
+      await supabase.from('keyword_synonyms').delete().eq('user_id', user.id)
+      await supabase.from('unrecognized_keywords').delete().eq('user_id', user.id)
+      const { error } = await supabase.from('category_keywords').delete().eq('user_id', user.id)
       if (error) throw new Error('Ошибка при удалении ключевых слов: ' + error.message)
-      deletedItems.push('ключевые слова')
+      deletedItems.push('ключевые слова и синонимы')
     }
 
     if (options.deleteCategories) {

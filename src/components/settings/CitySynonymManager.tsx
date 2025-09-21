@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/useToast'
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym } from '@/lib/actions/synonyms'
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
+import { AddSynonymForm } from './AddSynonymForm'
 
 interface SynonymFormState {
   city: string
@@ -56,14 +57,15 @@ export function CitySynonymManager() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!formState.city.trim() || !formState.synonym.trim()) {
-      showToast('Заполните оба поля', 'error')
+    if (!formState.city.trim()) {
+      showToast('Заполните название города', 'error')
       return
     }
 
     setIsSubmitting(true)
     try {
-      const result = await createCitySynonym({ city: formState.city.trim(), synonym: formState.synonym.trim() })
+      const cityName = formState.city.trim();
+      const result = await createCitySynonym({ city: cityName, synonym: cityName })
       if (result.error) {
         showToast(result.error, 'error')
       } else if (result.success && result.data) {
@@ -72,12 +74,12 @@ export function CitySynonymManager() {
           syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })))
           return updated
         })
-        showToast('Синоним города добавлен', 'success')
+        showToast('Город добавлен', 'success')
         setFormState({ city: '', synonym: '' })
       }
     } catch (error) {
-      console.error('Failed to create city synonym', error)
-      showToast('Не удалось добавить синоним города', 'error')
+      console.error('Failed to create city', error)
+      showToast('Не удалось добавить город', 'error')
     } finally {
       setIsSubmitting(false)
     }
@@ -116,29 +118,19 @@ export function CitySynonymManager() {
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-3">
-        <div className="md:col-span-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="synonym-city">Главный город</label>
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="synonym-city">Название города</label>
           <Input
             id="synonym-city"
             placeholder="Например: Минск"
             value={formState.city}
-            onChange={(event) => setFormState(prev => ({ ...prev, city: event.target.value }))}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="md:col-span-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="synonym-alias">Синоним</label>
-          <Input
-            id="synonym-alias"
-            placeholder="Например: Minsk"
-            value={formState.synonym}
-            onChange={(event) => setFormState(prev => ({ ...prev, synonym: event.target.value }))}
+            onChange={(event) => setFormState(prev => ({ ...prev, city: event.target.value, synonym: '' }))}
             disabled={isSubmitting}
           />
         </div>
         <div className="md:col-span-1 flex items-end">
           <Button type="submit" isLoading={isSubmitting} className="w-full md:w-auto">
-            Добавить синоним
+            Добавить город
           </Button>
         </div>
       </form>
@@ -153,7 +145,7 @@ export function CitySynonymManager() {
             <div key={city} className="border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="text-sm font-semibold text-gray-800">{city}</div>
               <div className="flex flex-wrap gap-2">
-                {entries.map(entry => (
+                {entries.filter(entry => entry.synonym !== city).map(entry => (
                   <span key={entry.id} className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
                     {entry.synonym}
                     <button
@@ -167,6 +159,7 @@ export function CitySynonymManager() {
                   </span>
                 ))}
               </div>
+              <AddSynonymForm city={city} onSynonymAdded={loadSynonyms} />
             </div>
           ))
         )}

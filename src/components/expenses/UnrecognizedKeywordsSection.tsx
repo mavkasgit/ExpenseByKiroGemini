@@ -170,7 +170,11 @@ export function UnrecognizedKeywordsSection({
                         <SearchableSelect
                           options={categoryOptions}
                           value=""
-                          onChange={(categoryId) => handleAssignCategory(keyword, categoryId)}
+                          onChange={(categoryId) => {
+                            if (categoryId) {
+                              handleAssignCategory(keyword, categoryId)
+                            }
+                          }}
                           placeholder="Выберите категорию..."
                           disabled={assigningKeywords.has(keyword.id)}
                           size="sm"

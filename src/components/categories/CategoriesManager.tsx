@@ -14,6 +14,7 @@ import { applyPreset } from '@/lib/actions/presets'
 import { GroupsManager } from './GroupsManager'
 import { PresetPicker } from './PresetPicker'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { GroupsModal } from './GroupsModal'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { Modal } from '@/components/ui/Modal'
@@ -311,6 +312,37 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
   const hasData = useMemo(() => groups.length > 0, [groups]);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredKeywords = useMemo(() => {
+    if (!searchQuery) {
+      return allKeywords;
+    }
+    const lowercasedQuery = searchQuery.toLowerCase();
+    return allKeywords.filter(keyword => {
+      const keywordMatch = keyword.keyword.toLowerCase().includes(lowercasedQuery);
+      const synonymMatch = keyword.keyword_synonyms?.some(synonym =>
+        synonym.synonym.toLowerCase().includes(lowercasedQuery)
+      );
+      return keywordMatch || synonymMatch;
+    });
+  }, [allKeywords, searchQuery]);
+
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery) {
+      return groups;
+    }
+
+    const filteredCategoryIds = new Set(filteredKeywords.map(k => k.category_id));
+
+    return groups
+      .map(group => ({
+        ...group,
+        categories: group.categories.filter(c => filteredCategoryIds.has(c.id)),
+      }))
+      .filter(group => group.categories.length > 0);
+  }, [groups, filteredKeywords, searchQuery]);
+
   if (!hasData) {
     return (
       <div className="text-center py-12 bg-white rounded-lg shadow-sm">
@@ -359,7 +391,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
           onClose={handleCloseKeywordsModal}
           category={selectedCategoryForKeywords}
           categories={categories}
-          keywords={allKeywords.filter(k => k.category_id === selectedCategoryForKeywords.id)}
+          keywords={filteredKeywords.filter(k => k.category_id === selectedCategoryForKeywords.id)}
           onKeywordChange={handleKeywordChange}
           userSettings={userSettings}
         />
@@ -371,8 +403,10 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <GroupsManager
-          groups={groups}
+
+
+      <GroupsManager
+          groups={filteredGroups}
           handleEditGroup={openGroupModalForEdit}
           handleDeleteGroup={handleDeleteGroup}
           handleEditCategory={openCategoryModalForEdit}

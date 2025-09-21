@@ -13,6 +13,8 @@ import { useToast } from '@/hooks/useToast'
 import type { ExpenseWithCategory, Category } from '@/types'
 import type { UpdateExpenseData } from '@/lib/validations/expenses'
 
+const NO_CATEGORY = 'NO_CATEGORY'
+
 interface ExpenseEditModalProps {
   expense: ExpenseWithCategory
   categories: Category[]
@@ -121,7 +123,7 @@ export function ExpenseEditModal({
         amount: expense.amount,
         description: expense.description || '',
         notes: expense.notes || '',
-        category_id: expense.category_id || '',
+        category_id: expense.category_id || NO_CATEGORY,
         expense_date: expense.expense_date,
         expense_time: expense.expense_time || ''
       })
@@ -161,8 +163,8 @@ export function ExpenseEditModal({
           updateData.notes = formData.notes || undefined
         }
         
-        if (formData.category_id !== (expense.category_id || '')) {
-          updateData.category_id = formData.category_id || undefined
+        if (formData.category_id !== (expense.category_id || NO_CATEGORY)) {
+          updateData.category_id = formData.category_id === NO_CATEGORY ? null : formData.category_id
         }
         
         if (formData.expense_date !== expense.expense_date) {

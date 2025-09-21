@@ -4,15 +4,15 @@ import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 
 interface Option {
-  value: string
+  value: string | null
   label: string
   color?: string
 }
 
 interface SearchableSelectProps {
   options: Option[]
-  value: string
-  onChange: (value: string) => void
+  value: string | null
+  onChange: (value: string | null) => void
   placeholder?: string
   className?: string
   required?: boolean
@@ -89,7 +89,7 @@ export function SearchableSelect({
     }
   }
 
-  const handleSelect = (optionValue: string) => {
+  const handleSelect = (optionValue: string | null) => {
     onChange(optionValue)
     setIsOpen(false)
     setSearchTerm('')
