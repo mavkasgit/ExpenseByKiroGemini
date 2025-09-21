@@ -4,6 +4,7 @@ import { memo, useMemo } from 'react'
 import { geoMercator, geoPath } from 'd3-geo'
 import { feature } from 'topojson-client'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
+import type { GeometryCollection as TopologyGeometryCollection, Topology } from 'topojson-specification'
 import countries110m from 'world-atlas/countries-110m.json'
 
 const WIDTH = 760
@@ -72,9 +73,13 @@ const coordinateEntries: CoordinateEntry[] = [
 
 coordinateEntries.forEach(([names, lon, lat]) => addCoordinate(names, lon, lat))
 
+const countriesTopology = countries110m as unknown as Topology<{
+  countries: TopologyGeometryCollection
+}>
+
 const countries = feature(
-  countries110m as unknown as { type: 'Topology'; objects: { countries: unknown } },
-  (countries110m as unknown as { objects: { countries: unknown } }).objects.countries
+  countriesTopology,
+  countriesTopology.objects.countries as TopologyGeometryCollection
 ) as FeatureCollection<Geometry>
 
 const russiaFeature = countries.features.find(item => item.id === RUSSIA_ID) as Feature<Geometry> | undefined
