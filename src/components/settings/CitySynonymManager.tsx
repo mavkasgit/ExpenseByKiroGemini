@@ -3,11 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Button, Input } from '@/components/ui'
 import { useToast } from '@/hooks/useToast'
-import { getCitySynonyms, createCitySynonym, deleteCitySynonym } from '@/lib/actions/synonyms'
+import {
+  getCitySynonyms,
+  createCitySynonym,
+  deleteCitySynonym,
+  updateCityName,
+  deleteCity
+} from '@/lib/actions/synonyms'
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
 import { CityMap } from './CityMap'
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 
 interface SynonymFormState {
   city: string
@@ -26,8 +33,12 @@ export function CitySynonymManager() {
   const [formState, setFormState] = useState<SynonymFormState>({ city: '', synonym: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({})
-  const [searchTerm, setSearchTerm] = useState('')
   const [activeCity, setActiveCity] = useState<string | null>(null)
+  const [editingCityId, setEditingCityId] = useState<string | null>(null)
+  const [editingCityName, setEditingCityName] = useState('')
+  const [isCityUpdating, setIsCityUpdating] = useState(false)
+  const [cityToDelete, setCityToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [isDeletingCity, setIsDeletingCity] = useState(false)
   const { showToast } = useToast()
 
   const loadSynonyms = useCallback(async () => {
@@ -65,35 +76,15 @@ export function CitySynonymManager() {
   }, [synonyms])
 
   useEffect(() => {
-    if (groupedSynonyms.length > 0 && !activeCity) {
-      setActiveCity(groupedSynonyms[0][0])
-    } else if (groupedSynonyms.length === 0) {
+    if (groupedSynonyms.length === 0) {
       setActiveCity(null)
-    }
-  }, [groupedSynonyms, activeCity])
-
-  const filteredGroupedSynonyms = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase()
-    if (!term) {
-      return groupedSynonyms
-    }
-
-    return groupedSynonyms.filter(([city, entries]) => {
-      if (city.toLowerCase().includes(term)) {
-        return true
-      }
-      return entries.some(entry => entry.synonym.toLowerCase().includes(term))
-    })
-  }, [groupedSynonyms, searchTerm])
-
-  useEffect(() => {
-    if (filteredGroupedSynonyms.length === 0) {
       return
     }
-    if (!filteredGroupedSynonyms.some(([city]) => city === activeCity)) {
-      setActiveCity(filteredGroupedSynonyms[0][0])
+
+    if (!activeCity || !groupedSynonyms.some(([city]) => city === activeCity)) {
+      setActiveCity(groupedSynonyms[0][0])
     }
-  }, [filteredGroupedSynonyms, activeCity])
+  }, [groupedSynonyms, activeCity])
 
   const stats = useMemo(() => {
     const totalCities = groupedSynonyms.length
@@ -113,7 +104,7 @@ export function CitySynonymManager() {
   }, [groupedSynonyms, synonyms])
 
   const citySummary: CitySummary[] = useMemo(() => {
-    return filteredGroupedSynonyms.map(([city, entries]) => {
+    return groupedSynonyms.map(([city, entries]) => {
       const alternate = entries.filter(entry => entry.synonym !== city).length
       return {
         name: city,
@@ -121,9 +112,7 @@ export function CitySynonymManager() {
         alternate
       }
     })
-  }, [filteredGroupedSynonyms])
-
-  const isSearchActive = searchTerm.trim().length > 0
+  }, [groupedSynonyms])
 
   const toggleCity = (city: string) => {
     setActiveCity(prev => (prev === city ? null : city))
@@ -163,7 +152,7 @@ export function CitySynonymManager() {
     }
   }
 
-  const handleDelete = async (synonym: CitySynonym) => {
+  const handleDeleteSynonym = async (synonym: CitySynonym) => {
     setDeletingMap(prev => ({ ...prev, [synonym.id]: true }))
     try {
       const result = await deleteCitySynonym({ id: synonym.id })
@@ -185,6 +174,119 @@ export function CitySynonymManager() {
     }
   }
 
+  const handleStartEditCity = (cityId: string, cityName: string) => {
+    setEditingCityId(cityId)
+    setEditingCityName(cityName)
+    setActiveCity(cityName)
+  }
+
+  const handleCancelEditCity = () => {
+    setEditingCityId(null)
+    setEditingCityName('')
+  }
+
+  const handleSubmitCityEdit = async (
+    event: React.FormEvent<HTMLFormElement>,
+    cityId: string,
+    previousName: string
+  ) => {
+    event.preventDefault()
+
+    const trimmedName = editingCityName.trim()
+    if (!trimmedName) {
+      showToast('Введите название города', 'error')
+      return
+    }
+
+    if (trimmedName === previousName) {
+      showToast('Название города не изменилось', 'info')
+      handleCancelEditCity()
+      return
+    }
+
+    setIsCityUpdating(true)
+    try {
+      const result = await updateCityName({ id: cityId, city: trimmedName })
+      if (result.error) {
+        showToast(result.error, 'error')
+      } else {
+        setSynonyms(prev => {
+          const updated = prev.map(entry => {
+            if (entry.city !== previousName) {
+              return entry
+            }
+
+            const updatedEntry: CitySynonym = {
+              ...entry,
+              city: trimmedName,
+              synonym: entry.id === cityId ? trimmedName : entry.synonym
+            }
+
+            return updatedEntry
+          })
+
+          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })))
+          return updated
+        })
+
+        if (activeCity === previousName) {
+          setActiveCity(trimmedName)
+        }
+
+        showToast('Город обновлён', 'success')
+        handleCancelEditCity()
+      }
+    } catch (error) {
+      console.error('Failed to update city', error)
+      showToast('Не удалось обновить город', 'error')
+    } finally {
+      setIsCityUpdating(false)
+    }
+  }
+
+  const handleOpenDeleteCity = (cityId: string, cityName: string) => {
+    setCityToDelete({ id: cityId, name: cityName })
+  }
+
+  const handleCloseDeleteCity = () => {
+    if (isDeletingCity) {
+      return
+    }
+    setCityToDelete(null)
+  }
+
+  const handleConfirmDeleteCity = async () => {
+    if (!cityToDelete) {
+      return
+    }
+
+    setIsDeletingCity(true)
+    try {
+      const result = await deleteCity({ id: cityToDelete.id })
+      if (result.error) {
+        showToast(result.error, 'error')
+      } else {
+        setSynonyms(prev => {
+          const updated = prev.filter(entry => entry.city !== cityToDelete.name)
+          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })))
+          return updated
+        })
+
+        if (activeCity === cityToDelete.name) {
+          setActiveCity(null)
+        }
+
+        showToast('Город удалён', 'success')
+        setCityToDelete(null)
+      }
+    } catch (error) {
+      console.error('Failed to delete city', error)
+      showToast('Не удалось удалить город', 'error')
+    } finally {
+      setIsDeletingCity(false)
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
       <Card>
@@ -196,20 +298,9 @@ export function CitySynonymManager() {
                 Рабочая область для управления городами и их альтернативными написаниями.
               </CardDescription>
             </div>
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-              <div className="relative w-full sm:w-64">
-                <Input
-                  placeholder="Поиск по городу или синониму"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  className="pl-9"
-                />
-                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
-              </div>
-              <Button type="button" variant="outline" onClick={loadSynonyms} disabled={isLoading}>
-                Обновить
-              </Button>
-            </div>
+            <Button type="button" variant="outline" onClick={loadSynonyms} disabled={isLoading}>
+              Обновить
+            </Button>
           </div>
         </CardHeader>
 
@@ -241,35 +332,100 @@ export function CitySynonymManager() {
               <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
                 Загружаем текущий список городов…
               </div>
-            ) : filteredGroupedSynonyms.length === 0 ? (
+            ) : groupedSynonyms.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                Ничего не найдено. Проверьте запрос или добавьте новый город.
+                Ничего не найдено. Добавьте новый город, чтобы начать работу.
               </div>
             ) : (
-              filteredGroupedSynonyms.map(([city, entries]) => {
+              groupedSynonyms.map(([city, entries]) => {
                 const synonymsForCity = entries.filter(entry => entry.synonym !== city)
-                const isExpanded = isSearchActive || activeCity === city
+                const canonicalEntry = entries.find(entry => entry.synonym === city) ?? entries[0]
+                const cityId = canonicalEntry?.id
+                const isExpanded = activeCity === city
+                const isEditing = cityId ? editingCityId === cityId : false
+                const isDeleteLoading = cityId ? isDeletingCity && cityToDelete?.id === cityId : false
 
                 return (
                   <div key={city} className="rounded-lg border border-slate-200 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => toggleCity(city)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{city}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {synonymsForCity.length > 0
-                            ? `Альтернативных написаний: ${synonymsForCity.length}`
-                            : 'Только основной вариант'}
-                        </p>
-                      </div>
-                      <span className="text-xl text-slate-400">{isExpanded ? '–' : '+'}</span>
-                    </button>
+                    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <button
+                        type="button"
+                        onClick={() => toggleCity(city)}
+                        className="flex flex-1 items-center justify-between gap-3 text-left sm:pr-4"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{city}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {synonymsForCity.length > 0
+                              ? `Альтернативных написаний: ${synonymsForCity.length}`
+                              : 'Только основной вариант'}
+                          </p>
+                        </div>
+                        <span className="text-xl text-slate-400">{isExpanded ? '–' : '+'}</span>
+                      </button>
+
+                      {cityId && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleStartEditCity(cityId, city)
+                            }}
+                            disabled={isCityUpdating && isEditing}
+                          >
+                            Редактировать
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:bg-red-50"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleOpenDeleteCity(cityId, city)
+                            }}
+                            disabled={isDeleteLoading}
+                          >
+                            Удалить
+                          </Button>
+                        </div>
+                      )}
+                    </div>
 
                     {isExpanded && (
                       <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+                        {isEditing && cityId && (
+                          <form
+                            onSubmit={(event) => handleSubmitCityEdit(event, cityId, city)}
+                            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                          >
+                            <Input
+                              value={editingCityName}
+                              onChange={(event) => setEditingCityName(event.target.value)}
+                              disabled={isCityUpdating}
+                              className="h-10 flex-1 text-sm"
+                              placeholder="Введите новое название"
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button type="submit" size="sm" isLoading={isCityUpdating}>
+                                Сохранить
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleCancelEditCity}
+                                disabled={isCityUpdating}
+                              >
+                                Отмена
+                              </Button>
+                            </div>
+                          </form>
+                        )}
+
                         {synonymsForCity.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {synonymsForCity.map(entry => (
@@ -280,7 +436,7 @@ export function CitySynonymManager() {
                                 {entry.synonym}
                                 <button
                                   type="button"
-                                  onClick={() => handleDelete(entry)}
+                                  onClick={() => handleDeleteSynonym(entry)}
                                   className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
                                   disabled={!!deletingMap[entry.id] || isSubmitting}
                                   aria-label="Удалить синоним"
@@ -340,6 +496,14 @@ export function CitySynonymManager() {
           </CardContent>
         </Card>
       </div>
+      <ConfirmationModal
+        isOpen={!!cityToDelete}
+        onClose={handleCloseDeleteCity}
+        onConfirm={handleConfirmDeleteCity}
+        title="Удалить город"
+        message={cityToDelete ? `Город «${cityToDelete.name}» и все связанные синонимы будут удалены. Вы уверены?` : ''}
+        isLoading={isDeletingCity}
+      />
     </div>
   )
 }
