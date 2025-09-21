@@ -1,10 +1,44 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { signUpSchema, signInSchema, resetPasswordSchema, updatePasswordSchema } from '@/lib/validations/auth'
 import type { SignUpData, SignInData, ResetPasswordData, UpdatePasswordData } from '@/lib/validations/auth'
+
+function getPublicSiteUrl() {
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (envUrl) {
+    return envUrl
+  }
+
+  const vercelUrls = [
+    process.env.VERCEL_BRANCH_URL,
+    process.env.VERCEL_URL,
+    process.env.VERCEL_DEPLOYMENT_URL,
+  ]
+
+  for (const url of vercelUrls) {
+    const normalizedUrl = url?.trim()
+    if (!normalizedUrl) {
+      continue
+    }
+
+    if (/^https?:\/\//i.test(normalizedUrl)) {
+      return normalizedUrl
+    }
+
+    return `https://${normalizedUrl}`
+  }
+
+  const origin = headers().get('origin')
+  if (origin) {
+    return origin
+  }
+
+  return 'http://localhost:3000'
+}
 
 export async function signUp(data: SignUpData) {
   const supabase = await createServerClient()
@@ -17,7 +51,7 @@ export async function signUp(data: SignUpData) {
       email: validatedData.email,
       password: validatedData.password,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`,
+        emailRedirectTo: `${getPublicSiteUrl()}/auth/confirm`,
       },
     })
 
@@ -103,7 +137,7 @@ export async function resetPassword(data: ResetPasswordData) {
     const validatedData = resetPasswordSchema.parse(data)
 
     const { error } = await supabase.auth.resetPasswordForEmail(validatedData.email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/reset-password`,
+      redirectTo: `${getPublicSiteUrl()}/auth/reset-password`,
     })
 
     if (error) {
@@ -155,7 +189,7 @@ export async function updatePassword(data: UpdatePasswordData) {
 export async function signInWithGoogle() {
   const supabase = await createServerClient()
 
-  const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+  const redirectUrl = `${getPublicSiteUrl()}/auth/callback`
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -183,7 +217,7 @@ export async function signInWithGoogle() {
 export async function signInWithGoogleForceSelect() {
   const supabase = await createServerClient()
 
-  const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+  const redirectUrl = `${getPublicSiteUrl()}/auth/callback`
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
