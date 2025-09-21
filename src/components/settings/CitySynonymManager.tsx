@@ -1,16 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Card, Button, Input } from '@/components/ui'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, Button, Input } from '@/components/ui'
 import { useToast } from '@/hooks/useToast'
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym } from '@/lib/actions/synonyms'
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
+import { CityMap } from './CityMap'
 
 interface SynonymFormState {
   city: string
   synonym: string
+}
+
+interface CitySummary {
+  name: string
+  total: number
+  alternate: number
 }
 
 export function CitySynonymManager() {
@@ -19,6 +26,8 @@ export function CitySynonymManager() {
   const [formState, setFormState] = useState<SynonymFormState>({ city: '', synonym: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({})
+  const [searchTerm, setSearchTerm] = useState('')
+  const [activeCity, setActiveCity] = useState<string | null>(null)
   const { showToast } = useToast()
 
   const loadSynonyms = useCallback(async () => {
@@ -55,6 +64,75 @@ export function CitySynonymManager() {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ru'))
   }, [synonyms])
 
+  useEffect(() => {
+    if (groupedSynonyms.length > 0 && !activeCity) {
+      setActiveCity(groupedSynonyms[0][0])
+    } else if (groupedSynonyms.length === 0) {
+      setActiveCity(null)
+    }
+  }, [groupedSynonyms, activeCity])
+
+  const filteredGroupedSynonyms = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    if (!term) {
+      return groupedSynonyms
+    }
+
+    return groupedSynonyms.filter(([city, entries]) => {
+      if (city.toLowerCase().includes(term)) {
+        return true
+      }
+      return entries.some(entry => entry.synonym.toLowerCase().includes(term))
+    })
+  }, [groupedSynonyms, searchTerm])
+
+  useEffect(() => {
+    if (filteredGroupedSynonyms.length === 0) {
+      return
+    }
+    if (!filteredGroupedSynonyms.some(([city]) => city === activeCity)) {
+      setActiveCity(filteredGroupedSynonyms[0][0])
+    }
+  }, [filteredGroupedSynonyms, activeCity])
+
+  const stats = useMemo(() => {
+    const totalCities = groupedSynonyms.length
+    const citiesWithCustomSynonyms = groupedSynonyms.filter(([, entries]) =>
+      entries.some(entry => entry.synonym.trim() && entry.synonym !== entry.city)
+    ).length
+    const totalSynonyms = synonyms.length
+    const customSynonyms = synonyms.filter(entry => entry.synonym !== entry.city).length
+    const coverage = totalCities === 0 ? 0 : Math.round((citiesWithCustomSynonyms / totalCities) * 100)
+
+    return {
+      totalCities,
+      totalSynonyms,
+      customSynonyms,
+      coverage
+    }
+  }, [groupedSynonyms, synonyms])
+
+  const citySummary: CitySummary[] = useMemo(() => {
+    return filteredGroupedSynonyms.map(([city, entries]) => {
+      const alternate = entries.filter(entry => entry.synonym !== city).length
+      return {
+        name: city,
+        total: entries.length,
+        alternate
+      }
+    })
+  }, [filteredGroupedSynonyms])
+
+  const isSearchActive = searchTerm.trim().length > 0
+
+  const toggleCity = (city: string) => {
+    setActiveCity(prev => (prev === city ? null : city))
+  }
+
+  const handleCitySelect = (city: string) => {
+    setActiveCity(city)
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!formState.city.trim()) {
@@ -64,7 +142,7 @@ export function CitySynonymManager() {
 
     setIsSubmitting(true)
     try {
-      const cityName = formState.city.trim();
+      const cityName = formState.city.trim()
       const result = await createCitySynonym({ city: cityName, synonym: cityName })
       if (result.error) {
         showToast(result.error, 'error')
@@ -108,62 +186,160 @@ export function CitySynonymManager() {
   }
 
   return (
-    <Card className="p-6 space-y-6">
-      <div>
-        <h5 className="text-base font-semibold text-gray-900">Синонимы городов</h5>
-        <p className="text-sm text-gray-500 mt-1">
-          Добавьте альтернативные написания городов, чтобы объединять их в аналитике и заметках. При совпадении будет отображаться
-          основной город и использованный синоним.
-        </p>
-      </div>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle>Справочник городов</CardTitle>
+              <CardDescription>
+                Рабочая область для управления городами и их альтернативными написаниями.
+              </CardDescription>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Input
+                  placeholder="Поиск по городу или синониму"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="pl-9"
+                />
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
+              </div>
+              <Button type="button" variant="outline" onClick={loadSynonyms} disabled={isLoading}>
+                Обновить
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
 
-      <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="synonym-city">Название города</label>
-          <Input
-            id="synonym-city"
-            placeholder="Например: Минск"
-            value={formState.city}
-            onChange={(event) => setFormState(prev => ({ ...prev, city: event.target.value, synonym: '' }))}
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="md:col-span-1 flex items-end">
-          <Button type="submit" isLoading={isSubmitting} className="w-full md:w-auto">
-            Добавить город
-          </Button>
-        </div>
-      </form>
+        <CardContent className="space-y-6">
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-end"
+          >
+            <div className="w-full sm:flex-1">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
+                Новый город
+              </label>
+              <Input
+                id="synonym-city"
+                placeholder="Например: Санкт-Петербург"
+                value={formState.city}
+                onChange={(event) => setFormState(prev => ({ ...prev, city: event.target.value, synonym: '' }))}
+                disabled={isSubmitting}
+                className="h-11"
+              />
+            </div>
+            <Button type="submit" isLoading={isSubmitting} className="h-11 sm:w-auto">
+              Добавить город
+            </Button>
+          </form>
 
-      <div className="space-y-4">
-        {isLoading ? (
-          <div className="text-sm text-gray-500">Загрузка синонимов...</div>
-        ) : groupedSynonyms.length === 0 ? (
-          <div className="text-sm text-gray-500">Пока нет ни одного синонима города.</div>
-        ) : (
-          groupedSynonyms.map(([city, entries]) => (
-            <div key={city} className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="text-sm font-semibold text-gray-800">{city}</div>
-              <div className="flex flex-wrap gap-2">
-                {entries.filter(entry => entry.synonym !== city).map(entry => (
-                  <span key={entry.id} className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
-                    {entry.synonym}
+          <div className="space-y-3">
+            {isLoading ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                Загружаем текущий список городов…
+              </div>
+            ) : filteredGroupedSynonyms.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                Ничего не найдено. Проверьте запрос или добавьте новый город.
+              </div>
+            ) : (
+              filteredGroupedSynonyms.map(([city, entries]) => {
+                const synonymsForCity = entries.filter(entry => entry.synonym !== city)
+                const isExpanded = isSearchActive || activeCity === city
+
+                return (
+                  <div key={city} className="rounded-lg border border-slate-200 bg-white">
                     <button
                       type="button"
-                      onClick={() => handleDelete(entry)}
-                      className="hover:text-red-600 focus:outline-none"
-                      disabled={!!deletingMap[entry.id] || isSubmitting}
+                      onClick={() => toggleCity(city)}
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                     >
-                      ×
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{city}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {synonymsForCity.length > 0
+                            ? `Альтернативных написаний: ${synonymsForCity.length}`
+                            : 'Только основной вариант'}
+                        </p>
+                      </div>
+                      <span className="text-xl text-slate-400">{isExpanded ? '–' : '+'}</span>
                     </button>
-                  </span>
-                ))}
-              </div>
-              <AddSynonymForm city={city} onSynonymAdded={loadSynonyms} />
+
+                    {isExpanded && (
+                      <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+                        {synonymsForCity.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {synonymsForCity.map(entry => (
+                              <span
+                                key={entry.id}
+                                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
+                              >
+                                {entry.synonym}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(entry)}
+                                  className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
+                                  disabled={!!deletingMap[entry.id] || isSubmitting}
+                                  aria-label="Удалить синоним"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">Добавьте варианты написания, которые встречаются в отчетах.</p>
+                        )}
+
+                        <AddSynonymForm city={city} onSynonymAdded={loadSynonyms} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Интерактивная карта</CardTitle>
+            <CardDescription>Выберите город на схеме, чтобы открыть его карточку в списке.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CityMap cities={citySummary} activeCity={activeCity} onSelectCity={handleCitySelect} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Статистика справочника</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+              <span className="text-sm text-slate-500">Городов</span>
+              <span className="text-lg font-semibold text-slate-900">{stats.totalCities}</span>
             </div>
-          ))
-        )}
+            <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+              <span className="text-sm text-slate-500">Всего записей</span>
+              <span className="text-lg font-semibold text-slate-900">{stats.totalSynonyms}</span>
+            </div>
+            <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+              <span className="text-sm text-slate-500">Альтернативных вариантов</span>
+              <span className="text-lg font-semibold text-slate-900">{stats.customSynonyms}</span>
+            </div>
+            <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+              <span className="text-sm text-slate-500">Покрытие</span>
+              <span className="text-lg font-semibold text-slate-900">{stats.coverage}%</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </Card>
+    </div>
   )
 }
