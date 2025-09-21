@@ -22,7 +22,7 @@ export async function signUp(data: SignUpData) {
     })
 
     if (error) {
-      console.error('Signup error:', error)
+      console.error('Signup error:', error?.message)
       return { error: error.message }
     }
 
@@ -46,8 +46,8 @@ export async function signUp(data: SignUpData) {
       success: true, 
       message: 'Проверьте свою электронную почту для подтверждения регистрации' 
     }
-  } catch (err) {
-    console.error('Signup validation error:', err)
+  } catch (err: any) {
+    console.error('Signup validation error:', err?.message ?? err)
     return { error: 'Ошибка валидации данных' }
   }
 }
@@ -71,8 +71,8 @@ export async function signIn(data: SignInData) {
     // Успешный вход - возвращаем успех
     revalidatePath('/', 'layout')
     return { success: true }
-  } catch (err) {
-    console.error('Sign in error:', err)
+  } catch (err: any) {
+    console.error('Sign in error:', err?.message ?? err)
     return { error: 'Произошла ошибка при входе' }
   }
 }
@@ -89,8 +89,8 @@ export async function signOut() {
 
     revalidatePath('/', 'layout')
     return { success: true }
-  } catch (err) {
-    console.error('Sign out error:', err)
+  } catch (err: any) {
+    console.error('Sign out error:', err?.message ?? err)
     return { error: 'Произошла ошибка при выходе' }
   }
 }
@@ -107,7 +107,7 @@ export async function resetPassword(data: ResetPasswordData) {
     })
 
     if (error) {
-      console.error('Reset password error:', error)
+      console.error('Reset password error:', error?.message)
       return { error: error.message }
     }
 
@@ -115,8 +115,8 @@ export async function resetPassword(data: ResetPasswordData) {
       success: true, 
       message: 'Проверьте свою электронную почту для сброса пароля' 
     }
-  } catch (err) {
-    console.error('Reset password validation error:', err)
+  } catch (err: any) {
+    console.error('Reset password validation error:', err?.message ?? err)
     return { error: 'Ошибка валидации данных' }
   }
 }
@@ -125,8 +125,6 @@ export async function updatePassword(data: UpdatePasswordData) {
   const supabase = await createServerClient()
 
   try {
-    console.log('Update password request')
-
     // Validate the data
     const validatedData = updatePasswordSchema.parse(data)
 
@@ -134,11 +132,9 @@ export async function updatePassword(data: UpdatePasswordData) {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
-      console.error('User not authenticated:', userError)
+      console.error('User not authenticated:', userError?.message)
       return { error: 'Пользователь не аутентифицирован. Пожалуйста, перейдите по ссылке из email еще раз.' }
     }
-
-    console.log('User authenticated, updating password for:', user.email)
 
     // Обновляем пароль
     const { error } = await supabase.auth.updateUser({
@@ -146,24 +142,20 @@ export async function updatePassword(data: UpdatePasswordData) {
     })
 
     if (error) {
-      console.error('Update password error:', error)
+      console.error('Update password error:', error?.message)
       return { error: error.message }
     }
-
-    console.log('Password updated successfully')
     return { success: true, message: 'Пароль успешно обновлен!' }
-  } catch (err) {
-    console.error('Update password validation error:', err)
+  } catch (err: any) {
+    console.error('Update password validation error:', err?.message ?? err)
     return { error: 'Ошибка валидации данных' }
   }
 }
 
 export async function signInWithGoogle() {
-  console.log('Starting Google OAuth...')
   const supabase = await createServerClient()
 
   const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-  console.log('Redirect URL:', redirectUrl)
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -176,29 +168,22 @@ export async function signInWithGoogle() {
     },
   })
 
-  console.log('OAuth response:', { data, error })
-
   if (error) {
-    console.error('Google sign in error:', error)
+    console.error('Google sign in error:', error?.message)
     return { error: error.message }
   }
 
   if (data.url) {
-    console.log('Redirecting to:', data.url)
     redirect(data.url)
-  } else {
-    console.log('No redirect URL received')
   }
 
   return { success: true }
 }
 
 export async function signInWithGoogleForceSelect() {
-  console.log('Starting Google OAuth with forced account selection...')
   const supabase = await createServerClient()
 
   const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-  console.log('Redirect URL:', redirectUrl)
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -211,18 +196,13 @@ export async function signInWithGoogleForceSelect() {
     },
   })
 
-  console.log('OAuth response:', { data, error })
-
   if (error) {
-    console.error('Google sign in error:', error)
+    console.error('Google sign in error:', error?.message)
     return { error: error.message }
   }
 
   if (data.url) {
-    console.log('Redirecting to:', data.url)
     redirect(data.url)
-  } else {
-    console.log('No redirect URL received')
   }
 
   return { success: true }

@@ -10,24 +10,21 @@ export function GoogleSignInButton() {
   const [showOptions, setShowOptions] = useState(false)
 
   const handleGoogleSignIn = async (forceSelect = false) => {
-    console.log('Google sign in button clicked, forceSelect:', forceSelect)
     setError(null)
     setIsLoading(true)
     setShowOptions(false)
-    
+
     try {
-      console.log('Calling signInWithGoogle...')
-      const result = forceSelect 
+      const result = forceSelect
         ? await signInWithGoogleForceSelect()
         : await signInWithGoogle()
-      console.log('signInWithGoogle result:', result)
-      
+
       if (result?.error) {
         setError(result.error)
-        console.error('Google OAuth error:', result.error)
+        console.error('Google OAuth error')
       }
     } catch (error) {
-      console.error('Google sign in error:', error)
+      console.error('Google sign in error')
       setError('Ошибка при входе через Google')
     } finally {
       setIsLoading(false)

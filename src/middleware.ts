@@ -37,11 +37,17 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const protectedPrefixes = [
+    '/dashboard',
+    '/expenses',
+    '/categories',
+    '/analytics',
+    '/cities',
+    '/keywords',
+  ]
+
   // Защищаем приватные страницы
-  if (request.nextUrl.pathname.startsWith('/dashboard') || 
-      request.nextUrl.pathname.startsWith('/expenses') ||
-      request.nextUrl.pathname.startsWith('/categories') ||
-      request.nextUrl.pathname.startsWith('/analytics')) {
+  if (protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))) {
     if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'

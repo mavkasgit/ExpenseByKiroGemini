@@ -15,8 +15,6 @@ export default async function ConfirmPage({
   const params = await searchParams
   const { token_hash, type, token, email, code } = params
 
-  console.log('Confirm page params:', params)
-
   let message = 'Подтверждение...'
   let isError = false
   let shouldRedirect = false
@@ -24,21 +22,19 @@ export default async function ConfirmPage({
 
   // Сначала проверяем, есть ли OAuth код
   if (code) {
-    console.log('OAuth code found, processing...')
     try {
       const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-      
+
       if (exchangeError) {
-        console.error('OAuth code exchange error:', exchangeError)
+        console.error('OAuth code exchange error:', exchangeError?.message)
         message = 'Ошибка при входе через Google'
         isError = true
       } else if (data?.user) {
-        console.log('OAuth user authenticated:', data.user.email)
         message = 'Вход через Google успешен! Перенаправляем на главную...'
         shouldRedirect = true
       }
-    } catch (err) {
-      console.error('OAuth exception:', err)
+    } catch (err: any) {
+      console.error('OAuth exception:', err?.message ?? err)
       message = 'Ошибка при обработке входа через Google'
       isError = true
     }
@@ -54,7 +50,7 @@ export default async function ConfirmPage({
       })
 
       if (error) {
-        console.error('Ошибка подтверждения (token_hash):', error)
+        console.error('Ошибка подтверждения (token_hash):', error?.message)
         message = 'Ошибка подтверждения email. Попробуйте еще раз.'
         isError = true
       } else {
@@ -70,7 +66,7 @@ export default async function ConfirmPage({
       })
 
       if (error) {
-        console.error('Ошибка подтверждения (token):', error)
+        console.error('Ошибка подтверждения (token):', error?.message)
         message = 'Ошибка подтверждения email. Попробуйте еще раз.'
         isError = true
       } else {
@@ -80,12 +76,12 @@ export default async function ConfirmPage({
     } else {
       // Проверяем существующую сессию
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (user && user.email_confirmed_at) {
         message = 'Email уже подтвержден! Перенаправляем на главную...'
         shouldRedirect = true
       } else {
-        console.error('Отсутствуют параметры подтверждения:', params)
+        console.error('Отсутствуют параметры подтверждения')
         message = 'Неверная ссылка подтверждения. Возможно, ссылка устарела или уже была использована.'
         isError = true
       }

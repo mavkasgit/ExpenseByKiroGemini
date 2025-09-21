@@ -121,16 +121,43 @@ export async function deleteAllUserData() {
   }
 
   try {
-    // Порядок важен!
-    await supabase.from('expenses').delete().eq('user_id', user.id)
-    await supabase.from('keywords').delete().eq('user_id', user.id)
-    await supabase.from('categories').delete().eq('user_id', user.id)
-    await supabase.from('category_groups').delete().eq('user_id', user.id)
+    const deletedItems: string[] = []
+
+    const deleteWithCheck = async (
+      table: string,
+      description: string,
+      message?: string,
+    ) => {
+      const { error } = await supabase.from(table).delete().eq('user_id', user.id)
+      if (error) {
+        throw new Error(`Ошибка при удалении ${description}: ${error.message}`)
+      }
+
+      if (message) {
+        deletedItems.push(message)
+      }
+    }
+
+    await deleteWithCheck('expenses', 'расходов', 'расходы')
+
+    await deleteWithCheck('keyword_synonyms', 'синонимов ключевых слов')
+    await deleteWithCheck('unrecognized_keywords', 'неопознанных ключевых слов')
+    await deleteWithCheck('category_keywords', 'ключевых слов', 'ключевые слова и синонимы')
+
+    await deleteWithCheck('city_synonyms', 'синонимов городов', 'синонимы городов')
+
+    await deleteWithCheck('categories', 'категорий', 'категории')
+    await deleteWithCheck('category_groups', 'групп категорий', 'группы категорий')
 
     revalidatePath('/', 'layout')
-    return { success: true, message: 'Все ваши данные были успешно удалены.' }
+    return {
+      success: true,
+      message: `Успешно удалены: ${deletedItems.join(', ')}.`,
+    }
 
   } catch (error: any) {
-    return { error: 'Произошла ошибка при полном удалении данных: ' + error.message }
+    return {
+      error: 'Произошла ошибка при полном удалении данных: ' + error.message,
+    }
   }
 }
