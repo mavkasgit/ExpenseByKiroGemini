@@ -328,7 +328,13 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
 
       const descriptionLower = description.toLowerCase()
 
-      for (const keyword of keywords as (typeof keywords)[number] & { keyword_synonyms?: { synonym: string }[] }) {
+      const keywordList = (keywords ?? []) as Array<
+        (typeof keywords extends Array<infer Item> ? Item : never) & {
+          keyword_synonyms?: { synonym: string | null }[]
+        }
+      >
+
+      for (const keyword of keywordList) {
         const base = keyword.keyword?.toLowerCase()
         if (base && descriptionLower.includes(base)) {
           return {
