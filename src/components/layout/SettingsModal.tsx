@@ -52,10 +52,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         setSettings(oldSettings); // Revert on error
       } else {
         toast.success('Настройки обновлены');
-        if (changedSettings.hasOwnProperty('enable_bilingual_keywords')) {
-          // Full page reload to ensure the new setting is applied everywhere
-          window.location.reload();
-        }
       }
     } catch (error) {
         toast.error('Произошла ошибка при обновлении настроек.');
@@ -98,38 +94,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {/* General Settings */}
           <div className="space-y-4">
             <h4 className="text-lg font-medium text-gray-900">Общие настройки</h4>
-            <div className="p-4 border border-gray-200 bg-white rounded-lg">
-              <label htmlFor="bilingual-switch" className="font-semibold text-gray-800">Двуязычные ключевые слова</label>
-              <p className="text-sm text-gray-500 mt-1 mb-4">
-                Включить управление латинской и кириллической версиями ключевых слов.
-              </p>
-              <Button
-                onClick={() => handleSettingsChange({ enable_bilingual_keywords: !settings.enable_bilingual_keywords })}
-                disabled={isLoadingSettings || isUpdatingSettings}
-                isLoading={isUpdatingSettings}
-                variant={settings.enable_bilingual_keywords ? 'success-dark' : 'success'}
-                className="w-32"
-              >
-                {settings.enable_bilingual_keywords ? 'Выключить' : 'Включить'}
-              </Button>
-            </div>
-            <div className="p-4 border border-gray-200 bg-white rounded-lg">
-              <div>
-                <label htmlFor="bilingual-cities-switch" className="font-semibold text-gray-800">Двуязычные города</label>
-                <p className="text-sm text-gray-500 mt-1 mb-4">
-                  Включить управление латинской и кириллической версиями городов.
-                </p>
-              </div>
-              <Button
-                onClick={() => handleSettingsChange({ enable_bilingual_cities: !settings.enable_bilingual_cities })}
-                disabled={isLoadingSettings || isUpdatingSettings}
-                isLoading={isUpdatingSettings}
-                variant={settings.enable_bilingual_cities ? 'success-dark' : 'success'}
-                className="w-32"
-              >
-                {settings.enable_bilingual_cities ? 'Выключить' : 'Включить'}
-              </Button>
-            </div>
           </div>
 
           {/* Danger Zone */}

@@ -34,7 +34,6 @@ export async function createKeyword(data: CreateKeywordData) {
       .insert({
         user_id: user.id,
         keyword: validatedData.keyword,
-        cyrillic_keyword: validatedData.cyrillic_keyword,
         category_id: validatedData.category_id
       })
       .select()
@@ -276,7 +275,7 @@ export async function categorizeExpense(description: string): Promise<Categoriza
 
     const { data: keywords, error } = await supabase
       .from('category_keywords')
-      .select('keyword, cyrillic_keyword, category_id')
+      .select('keyword, category_id')
       .eq('user_id', user.id)
 
     if (error || !keywords) {
@@ -288,9 +287,8 @@ export async function categorizeExpense(description: string): Promise<Categoriza
 
     for (const kw of keywords) {
       const latinMatch = kw.keyword && descriptionLower.includes(kw.keyword.toLowerCase());
-      const cyrillicMatch = kw.cyrillic_keyword && descriptionLower.includes(kw.cyrillic_keyword.toLowerCase());
 
-      if (latinMatch || cyrillicMatch) {
+      if (latinMatch) {
         matches.push({
           keyword: kw.keyword,
           category_id: kw.category_id!
@@ -333,13 +331,12 @@ export async function saveUnrecognizedKeywords(description: string) {
 
     const { data: existingKeywords } = await supabase
       .from('category_keywords')
-      .select('keyword, cyrillic_keyword')
+      .select('keyword')
       .eq('user_id', user.id)
 
     const existingKeywordSet = new Set<string>()
     existingKeywords?.forEach(k => {
       if (k.keyword) existingKeywordSet.add(k.keyword.toLowerCase())
-      if (k.cyrillic_keyword) existingKeywordSet.add(k.cyrillic_keyword.toLowerCase())
     })
 
     const newWords = words.filter(word => !existingKeywordSet.has(word.toLowerCase()))

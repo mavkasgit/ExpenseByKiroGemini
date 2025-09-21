@@ -108,7 +108,6 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       expense_date: getCurrentDateISO(),
       expense_time: '',
       city: '',
-      cyrillic_city: '',
       tempId: crypto.randomUUID()
     }
     setExpenses(prev => [...prev, newRow])

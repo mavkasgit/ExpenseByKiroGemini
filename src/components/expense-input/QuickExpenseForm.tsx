@@ -11,7 +11,6 @@ import { getCurrentDateISO, getCurrentTimeHHMM } from '@/lib/utils/dateUtils'
 import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
-import { transliterate } from '@/lib/utils/transliteration'
 
 interface QuickExpenseFormProps {
   onSuccess?: (expense: any) => void
@@ -33,7 +32,6 @@ export function QuickExpenseForm({
     expense_date: getCurrentDateISO(),
     expense_time: getCurrentTimeHHMM(),
     city: '',
-    cyrillic_city: '',
     input_method: 'single' as const
   })
 
@@ -78,7 +76,6 @@ export function QuickExpenseForm({
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
           city: formData.city || undefined,
-          cyrillic_city: formData.cyrillic_city || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит
         }
@@ -105,7 +102,6 @@ export function QuickExpenseForm({
           expense_date: prev.expense_date, // Оставляем дату
           expense_time: getCurrentTimeHHMM(), // Обновляем время на текущее
           city: '',
-          cyrillic_city: '',
           input_method: 'single'
         }))
 
@@ -191,36 +187,20 @@ export function QuickExpenseForm({
         </div>
 
         {/* Город */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <div>
             <Input
               type="text"
               value={formData.city}
               onChange={(e) => {
                 setFormData(prev => ({ ...prev, city: e.target.value }));
-                if (userSettings.enable_bilingual_cities) {
-                  setFormData(prev => ({ ...prev, cyrillic_city: transliterate(e.target.value) }));
-                }
               }}
               onKeyPress={handleKeyPress}
-              placeholder="Город (латиница)"
+              placeholder="Город"
               disabled={isPending}
               maxLength={100}
             />
           </div>
-          {userSettings.enable_bilingual_cities && (
-            <div>
-              <Input
-                type="text"
-                value={formData.cyrillic_city}
-                onChange={(e) => setFormData(prev => ({ ...prev, cyrillic_city: e.target.value }))}
-                onKeyPress={handleKeyPress}
-                placeholder="Город (кириллица)"
-                disabled={isPending}
-                maxLength={100}
-              />
-            </div>
-          )}
         </div>
 
         {/* Дата и время */}

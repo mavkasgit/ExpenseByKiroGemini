@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
@@ -11,6 +11,7 @@ import { createExpense } from '@/lib/actions/expenses'
 import { getCurrentDateISO } from '@/lib/utils/dateUtils'
 import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
+import { getUserSettings, UserSettings } from '@/lib/actions/settings'
 
 interface ExpenseFormProps {
   onSuccess?: (expense: any) => void
@@ -28,6 +29,17 @@ export function ExpenseForm({
   const [isPending, startTransition] = useTransition()
   const [errors, setErrors] = useState<Record<string, string>>({})
   const { showToast } = useToast()
+  const [userSettings, setUserSettings] = useState<UserSettings>({});
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const result = await getUserSettings();
+      if (result.settings) {
+        setUserSettings(result.settings);
+      }
+    };
+    fetchSettings();
+  }, []);
 
   // Состояние формы - убираем category_id, система сама определит категорию
   const [formData, setFormData] = useState({
@@ -37,7 +49,6 @@ export function ExpenseForm({
     expense_date: defaultValues?.expense_date || getCurrentDateISO(),
     expense_time: defaultValues?.expense_time || '',
     city: defaultValues?.city || '',
-    cyrillic_city: defaultValues?.cyrillic_city || '',
     input_method: 'single' as const
   })
 
@@ -112,14 +123,6 @@ export function ExpenseForm({
           delete newErrors.city;
         }
         break;
-
-      case 'cyrillic_city':
-        if (value && value.length > 100) {
-          newErrors.cyrillic_city = 'Название города не должно превышать 100 символов';
-        } else {
-          delete newErrors.cyrillic_city;
-        }
-        break;
     }
 
     setErrors(newErrors)
@@ -189,7 +192,6 @@ export function ExpenseForm({
           expense_date: getCurrentDateISO(),
           expense_time: '',
           city: '',
-          cyrillic_city: '',
           input_method: 'single'
         })
         setErrors({})
@@ -269,39 +271,20 @@ export function ExpenseForm({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
-              Город (латиница)
+              Город
             </label>
             <Input
               id="city"
               type="text"
               value={formData.city}
               onChange={(e) => handleFieldChange('city', e.target.value)}
-              placeholder="London"
+              placeholder="Лондон"
               maxLength={100}
               className={errors.city ? 'border-red-500' : ''}
               disabled={isPending}
             />
             {errors.city && <ErrorMessage error={errors.city} />}
           </div>
-
-          {userSettings.enable_bilingual_cities && (
-            <div>
-              <label htmlFor="cyrillic_city" className="block text-sm font-medium text-gray-700 mb-1">
-                Город (кириллица)
-              </label>
-              <Input
-                id="cyrillic_city"
-                type="text"
-                value={formData.cyrillic_city}
-                onChange={(e) => handleFieldChange('cyrillic_city', e.target.value)}
-                placeholder="Лондон"
-                maxLength={100}
-                className={errors.cyrillic_city ? 'border-red-500' : ''}
-                disabled={isPending}
-              />
-              {errors.cyrillic_city && <ErrorMessage error={errors.cyrillic_city} />}
-            </div>
-          )}
         </div>
 
         {/* Описание */}

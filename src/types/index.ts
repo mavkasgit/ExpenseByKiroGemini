@@ -55,7 +55,6 @@ export type Database = {
           created_at: string | null
           id: string
           keyword: string
-          cyrillic_keyword: string | null
           user_id: string | null
         }
         Insert: {
@@ -64,7 +63,6 @@ export type Database = {
           created_at?: string | null
           id?: string
           keyword: string
-          cyrillic_keyword?: string | null
           user_id?: string | null
         }
         Update: {
@@ -73,7 +71,6 @@ export type Database = {
           created_at?: string | null
           id?: string
           keyword?: string
-          cyrillic_keyword?: string | null
           user_id?: string | null
         }
       }
@@ -229,7 +226,6 @@ export type CreateExpenseData = {
   input_method?: 'single' | 'bulk_table'
   batch_id?: string
   city?: string | null
-  cyrillic_city?: string | null
 }
 
 export type CreateCategoryData = {
@@ -247,7 +243,6 @@ export type BulkExpenseRow = {
   expense_date: string
   tempId?: string // для отслеживания в UI
   city?: string
-  cyrillic_city?: string
 }
 
 
@@ -312,13 +307,11 @@ export type UncategorizedExpenseWithKeywords = Expense & {
 // Keyword management types
 export type CreateKeywordData = {
   keyword: string
-  cyrillic_keyword?: string | null
   category_id: string
 }
 
 export type UpdateKeywordData = {
   keyword?: string
-  cyrillic_keyword?: string | null
   category_id?: string
 }
 
@@ -330,7 +323,6 @@ export type UpdateExpenseData = {
   expense_date?: string
   expense_time?: string | null
   city?: string | null
-  cyrillic_city?: string | null
 }
 
 export type AssignKeywordData = {

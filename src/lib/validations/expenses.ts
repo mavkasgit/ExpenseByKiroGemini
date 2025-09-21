@@ -111,10 +111,6 @@ export const bulkExpenseRowSchema = z.object({
     .max(100, 'Название города не должно превышать 100 символов')
     .nullable()
     .optional(),
-  cyrillic_city: z.string()
-    .max(100, 'Название города не должно превышать 100 символов')
-    .nullable()
-    .optional(),
   tempId: z.string().optional() // для отслеживания в UI
 })
 

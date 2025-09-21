@@ -12,7 +12,6 @@ import {
 } from '@/lib/actions/keywords'
 import { UserSettings } from '@/lib/actions/settings'
 import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
-import { transliterate } from '@/lib/utils/transliteration'
 import type { CategoryKeyword, Category } from '@/types'
 
 interface KeywordEditorModalProps {
@@ -37,14 +36,8 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
 
   const [formData, setFormData] = useState({
     keyword: '',
-    cyrillic_keyword: '',
     category_id: category.id
   })
-
-  const handleLatinInputChange = (value: string) => {
-    const cyrillicValue = transliterate(value);
-    setFormData(prev => ({ ...prev, keyword: value, cyrillic_keyword: cyrillicValue }));
-  }
 
   const handleAddKeyword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,7 +49,6 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
     try {
       const result = await createKeyword({
         keyword: formData.keyword.trim(),
-        cyrillic_keyword: userSettings.enable_bilingual_keywords ? formData.cyrillic_keyword.trim() : null,
         category_id: formData.category_id
       })
       if (result.error) {
@@ -65,7 +57,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       } else {
         setToast({ message: 'Ключевое слово успешно добавлено', type: 'success' })
         setIsAddModalOpen(false)
-        setFormData({ keyword: '', cyrillic_keyword: '', category_id: category.id })
+        setFormData({ keyword: '', category_id: category.id })
         onKeywordChange?.()
       }
     } catch (err) {
@@ -87,7 +79,6 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
     try {
       const result = await updateKeyword(editingKeyword.id, {
         keyword: formData.keyword.trim(),
-        cyrillic_keyword: userSettings.enable_bilingual_keywords ? formData.cyrillic_keyword.trim() : null,
         category_id: formData.category_id
       })
       if (result.error) {
@@ -140,7 +131,6 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
     setEditingKeyword(keyword)
     setFormData({
       keyword: keyword.keyword,
-      cyrillic_keyword: keyword.cyrillic_keyword || '',
       category_id: keyword.category_id || category.id
     })
     setIsEditModalOpen(true)
@@ -151,16 +141,9 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Добавить ключевое слово">
         <form onSubmit={handleAddKeyword} className="space-y-4">
           <div>
-            <label htmlFor="keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово (латиница) *</label>
-            <Input id="keyword" type="text" value={formData.keyword} onChange={(e) => handleLatinInputChange(e.target.value)} placeholder="naprimer: taxi" required />
+            <label htmlFor="keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово *</label>
+            <Input id="keyword" type="text" value={formData.keyword} onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} placeholder="например: taxi" required />
           </div>
-          {userSettings.enable_bilingual_keywords && (
-            <div>
-              <label htmlFor="cyrillic_keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово (кириллица)</label>
-              <Input id="cyrillic_keyword" type="text" value={formData.cyrillic_keyword} onChange={(e) => setFormData({ ...formData, cyrillic_keyword: e.target.value })} placeholder="например: такси" />
-              <p className="text-xs text-gray-500 mt-1">Автоматически транслитерировано. Можно изменить.</p>
-            </div>
-          )}
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Отмена</Button>
             <Button type="submit" isLoading={isSubmitting}>{isSubmitting ? 'Добавление...' : 'Добавить'}</Button>
@@ -171,15 +154,9 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Редактировать ключевое слово">
         <form onSubmit={handleEditKeyword} className="space-y-4">
           <div>
-            <label htmlFor="edit-keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово (латиница) *</label>
-            <Input id="edit-keyword" type="text" value={formData.keyword} onChange={(e) => handleLatinInputChange(e.target.value)} required />
+            <label htmlFor="edit-keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово *</label>
+            <Input id="edit-keyword" type="text" value={formData.keyword} onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} required />
           </div>
-          {userSettings.enable_bilingual_keywords && (
-            <div>
-              <label htmlFor="edit-cyrillic_keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово (кириллица)</label>
-              <Input id="edit-cyrillic_keyword" type="text" value={formData.cyrillic_keyword} onChange={(e) => setFormData({ ...formData, cyrillic_keyword: e.target.value })} />
-            </div>
-          )}
            <div>
             <label htmlFor="edit-category" className="block text-sm font-medium text-gray-700 mb-1">Категория *</label>
             <SearchableSelect options={categories.map(c => ({ value: c.id, label: c.name, color: c.color || undefined }))} value={formData.category_id} onChange={(v) => setFormData({ ...formData, category_id: v })} required />
@@ -198,7 +175,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">Управляйте ключевыми словами для автоматической категоризации.</p>
-          <Button onClick={() => { setFormData({ keyword: '', cyrillic_keyword: '', category_id: category.id }); setIsAddModalOpen(true); }} disabled={isSubmitting}>
+          <Button onClick={() => { setFormData({ keyword: '', category_id: category.id }); setIsAddModalOpen(true); }} disabled={isSubmitting}>
             Добавить ключевое слово
           </Button>
         </div>
@@ -218,14 +195,7 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
                   <div className="flex-1">
                     <div className="flex items-center space-x-2">
                       <span className="font-medium text-gray-900">
-                        {userSettings.enable_bilingual_keywords && keyword.cyrillic_keyword ? (
-                          <>
-                            {keyword.cyrillic_keyword}
-                            <span className="text-gray-500 font-normal ml-1">({keyword.keyword})</span>
-                          </>
-                        ) : (
-                          keyword.keyword
-                        )}
+                        {keyword.keyword}
                       </span>
                     </div>
                     <div className="text-sm text-gray-500 mt-1">Создано: {formatDateLocaleRu(keyword.created_at || '')}</div>
