@@ -3,12 +3,27 @@
 import { useState } from 'react'
 import { presets } from '@/lib/presets'
 import { applyPreset } from '@/lib/actions/presets'
-import { Button, useToast } from '@/components/ui'
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  useToast
+} from '@/components/ui'
 import type { Category, CategoryGroup } from '@/types';
 
 interface PresetPickerProps {
   onSuccess: (newGroups: CategoryGroup[], newCategories: Category[]) => void
 }
+
+const highlightBadges = [
+  'Быстрый старт',
+  'Золотая середина',
+  'Максимум контроля'
+] as const
 
 export function PresetPicker({ onSuccess }: PresetPickerProps) {
   const [isLoading, setIsLoading] = useState<string | null>(null)
@@ -32,60 +47,131 @@ export function PresetPicker({ onSuccess }: PresetPickerProps) {
   }
 
   return (
-    <div className="w-full bg-slate-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-            Начните с готового набора или создайте свой с нуля
+    <section className="relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 py-16">
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-8rem] h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-200/40 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -bottom-32 right-12 h-80 w-80 rounded-full bg-sky-200/40 blur-3xl"
+        aria-hidden
+      />
+
+      <div className="relative mx-auto max-w-6xl px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <span className="inline-flex items-center rounded-full border border-indigo-200 bg-white/80 px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+            Библиотека пресетов
+          </span>
+          <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            Начните с красивого шаблона и адаптируйте его под себя
           </h1>
-          <p className="mt-3 max-w-2xl mx-auto text-lg text-gray-500">
-            Выберите один из шаблонов, чтобы мы создали для вас стандартный набор групп и категорий.
+          <p className="mt-4 text-lg text-slate-600">
+            Подберите готовый сценарий: от лёгкого старта до детальной аналитики. Все группы и категории можно донастроить после применения.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {presets.map(preset => (
-            <div key={preset.name} className="border-2 rounded-2xl overflow-hidden bg-white shadow-lg transition-all hover:border-indigo-500 hover:shadow-2xl">
-              <div className="p-6 text-center">
-                <div className="text-6xl mb-4">{preset.emoji}</div>
-                <h2 className="text-2xl font-bold text-gray-900">{preset.name}</h2>
-                <p className="mt-2 text-base text-gray-600 h-10">{preset.description}</p>
-              </div>
-              
-              <div className="bg-gray-50 px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                <div>
-                  <h4 className="font-semibold text-gray-700">Группы ({preset.groups.length})</h4>
-                  <ul className="mt-2 space-y-1 text-sm text-gray-600 list-disc pl-5">
-                    {preset.groups.map(group => (
-                      <li key={group.name}>{group.name}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-700">Категории ({preset.categories.length})</h4>
-                  <ul className="mt-2 space-y-1 text-sm text-gray-600 list-disc pl-5">
-                    {preset.categories.slice(0, 7).map(cat => (
-                      <li key={cat.name}>{cat.name}</li>
-                    ))}
-                    {preset.categories.length > 7 && <li>... и еще {preset.categories.length - 7}</li>}
-                  </ul>
-                </div>
-              </div>
+        <div className="mt-12 grid grid-cols-1 gap-8 lg:grid-cols-3">
+          {presets.map((preset, index) => {
+            const badgeLabel = highlightBadges[index] ?? 'Готовое решение'
 
-              <div className="p-6 bg-white">
-                <Button 
-                  variant="primary"
-                  className="w-full text-lg py-3"
-                  onClick={() => handlePresetSelect(preset.name)}
-                  isLoading={isLoading === preset.name}
-                >
-                  {isLoading === preset.name ? 'Создаем...' : `Выбрать "${preset.name}"`}
-                </Button>
-              </div>
-            </div>
-          ))}
+            return (
+              <Card
+                key={preset.name}
+                variant="elevated"
+                className="group relative h-full overflow-hidden border-none bg-white/80 p-0 shadow-xl ring-1 ring-slate-900/5 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
+              >
+                <div
+                  className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-sky-400/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                  aria-hidden
+                />
+                <div
+                  className="pointer-events-none absolute -right-24 -top-24 h-48 w-48 rounded-full bg-indigo-400/10 blur-3xl transition-transform duration-500 group-hover:scale-110"
+                  aria-hidden
+                />
+
+                <div className="relative flex h-full flex-col">
+                  <CardHeader className="flex flex-col gap-4 border-b border-white/60 bg-white/70 px-6 pb-6 pt-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-5xl leading-none">{preset.emoji}</span>
+                      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                        {badgeLabel}
+                      </span>
+                    </div>
+                    <div className="text-left">
+                      <CardTitle className="text-2xl text-slate-900">{preset.name}</CardTitle>
+                      <CardDescription className="mt-1 text-base text-slate-600">
+                        {preset.description}
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <span className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
+                        <span className="inline-flex h-2 w-2 rounded-full bg-indigo-500" aria-hidden />
+                        {preset.groups.length} групп
+                      </span>
+                      <span className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
+                        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                        {preset.categories.length} категорий
+                      </span>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="relative flex flex-1 flex-col gap-6 px-6 py-6">
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Группы</h3>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {preset.groups.slice(0, 6).map(group => (
+                          <span
+                            key={group.name}
+                            className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm"
+                          >
+                            {group.name}
+                          </span>
+                        ))}
+                        {preset.groups.length > 6 && (
+                          <span className="inline-flex items-center rounded-full bg-slate-200/80 px-3 py-1 text-xs font-medium text-slate-600">
+                            + ещё {preset.groups.length - 6}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Категории</h3>
+                      <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-600">
+                        {preset.categories.slice(0, 5).map(category => (
+                          <div
+                            key={category.name}
+                            className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white/90 px-3 py-2 shadow-sm"
+                          >
+                            <span className="font-medium text-slate-700">{category.name}</span>
+                            <span className="text-xs text-slate-400">{category.group}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {preset.categories.length > 5 && (
+                        <p className="mt-2 text-xs text-slate-400">
+                          ... и ещё {preset.categories.length - 5} категорий
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+
+                  <CardFooter className="relative mt-auto border-t border-slate-100/80 bg-slate-50/80 px-6 py-5">
+                    <Button
+                      variant="primary"
+                      className="w-full justify-center text-sm font-semibold shadow-lg shadow-indigo-500/10"
+                      onClick={() => handlePresetSelect(preset.name)}
+                      isLoading={isLoading === preset.name}
+                    >
+                      {isLoading === preset.name ? 'Создаем...' : `Выбрать «${preset.name}»`}
+                    </Button>
+                  </CardFooter>
+                </div>
+              </Card>
+            )
+          })}
         </div>
       </div>
-    </div>
+    </section>
   )
 }

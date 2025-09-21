@@ -18,4 +18,3 @@ export { ErrorMessage } from './ErrorMessage'
 
 export { ErrorBoundary, useErrorBoundary } from './ErrorBoundary'
 
-export * from './Switch'

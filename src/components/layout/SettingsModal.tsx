@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Modal, Button, useToast, Input, Switch } from '@/components/ui'
+import { Modal, Button, useToast, Input } from '@/components/ui'
 import { deleteAllUserData, getUserSettings, updateUserSettings, UserSettings } from '@/lib/actions/settings';
 
 import { SelectiveDeleteModal } from './SelectiveDeleteModal';
