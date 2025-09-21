@@ -4,7 +4,8 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 // Определяем пропсы для нашего кастомного свитча, наследуя стандартные атрибуты инпута
-interface SwitchProps extends React.InputHTMLAttributes<HTMLInputElement> {
+interface SwitchProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
   onCheckedChange?: (checked: boolean) => void
   /**
    * Управляет визуальным размером переключателя.
