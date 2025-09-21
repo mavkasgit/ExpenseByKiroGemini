@@ -119,38 +119,6 @@ export default async function MainPage() {
           </Link>
         </div>
 
-        {/* Дополнительные инструменты */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Инструменты разработчика
-          </h3>
-          <div className="space-y-3">
-            <a
-              href="/ui-demo"
-              className="block p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
-            >
-              <div className="flex items-center">
-                <span className="text-xl mr-3">🎨</span>
-                <div>
-                  <div className="font-medium text-gray-900">Демо UI компонентов</div>
-                  <div className="text-sm text-gray-600">Просмотр всех компонентов интерфейса</div>
-                </div>
-              </div>
-            </a>
-            <a
-              href="/debug-auth"
-              className="block p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
-            >
-              <div className="flex items-center">
-                <span className="text-xl mr-3">🔧</span>
-                <div>
-                  <div className="font-medium text-gray-900">Отладка аутентификации</div>
-                  <div className="text-sm text-gray-600">Информация о текущей сессии</div>
-                </div>
-              </div>
-            </a>
-          </div>
-        </div>
       </div>
     </div>
   );

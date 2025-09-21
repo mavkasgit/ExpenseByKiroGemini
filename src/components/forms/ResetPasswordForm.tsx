@@ -41,18 +41,15 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
 
         if (code) {
           // Новый формат с code параметром
-          console.log('Verifying with code:', code)
           verifyResult = await supabase.auth.exchangeCodeForSession(code)
         } else if (tokenHash) {
           // Формат с token_hash
-          console.log('Verifying with token_hash')
           verifyResult = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: 'recovery',
           })
         } else if (token && email) {
           // Старый формат с token
-          console.log('Verifying with token and email')
           verifyResult = await supabase.auth.verifyOtp({
             token,
             type: 'recovery',
@@ -61,18 +58,17 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
         }
 
         if (verifyResult?.error) {
-          console.error('Token verification error:', verifyResult.error)
+          console.error('Token verification error:', verifyResult.error?.message)
           setError('Недействительная или устаревшая ссылка для сброса пароля')
           setTokenValid(false)
         } else if (verifyResult?.data?.user) {
-          console.log('Token verified successfully, user:', verifyResult.data.user.email)
           setTokenValid(true)
         } else {
           setError('Не удалось верифицировать токен')
           setTokenValid(false)
         }
-      } catch (error) {
-        console.error('Token verification exception:', error)
+      } catch (error: any) {
+        console.error('Token verification exception:', error?.message ?? error)
         setError('Ошибка при проверке токена')
         setTokenValid(false)
       } finally {
