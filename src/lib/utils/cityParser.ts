@@ -5,7 +5,7 @@
 // Список известных городов Беларуси (можно расширять)
 const BELARUS_CITIES = [
   'MINSK', 'МИНСК',
-  'GOMEL', 'ГОМЕЛЬ', 
+  'GOMEL', 'ГОМЕЛЬ',
   'MOGILEV', 'МОГИЛЕВ',
   'VITEBSK', 'ВИТЕБСК',
   'GRODNO', 'ГРОДНО',
@@ -28,6 +28,15 @@ const BELARUS_CITIES = [
   'POLOTSK', 'ПОЛОЦК'
 ]
 
+type CitySynonymLookupValue = {
+  canonical: string
+  canonicalDisplay: string
+  synonymDisplay: string
+}
+
+const citySynonymLookup = new Map<string, CitySynonymLookupValue>()
+const canonicalCityDisplay = new Map<string, string>()
+
 // Паттерны для поиска городов в описании
 const CITY_PATTERNS = [
   // Паттерн: "BY НАЗВАНИЕ, ГОРОД" или "MN НАЗВАНИЕ, ГОРОД"
@@ -46,10 +55,76 @@ const CITY_PATTERNS = [
   /^(.+?),\s*([A-ZА-Я]+)(.*)$/i
 ]
 
+function formatCityDisplay(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function resolveCityVariant(city: string) {
+  const normalized = city.trim().toUpperCase()
+  if (!normalized) {
+    return null
+  }
+
+  const synonymRecord = citySynonymLookup.get(normalized)
+  if (synonymRecord) {
+    return {
+      canonical: synonymRecord.canonical,
+      display: `${synonymRecord.canonicalDisplay} (${synonymRecord.synonymDisplay})`,
+      isSynonym: true,
+      synonymDisplay: synonymRecord.synonymDisplay
+    }
+  }
+
+  if (BELARUS_CITIES.includes(normalized)) {
+    const display = canonicalCityDisplay.get(normalized) || formatCityDisplay(normalized)
+    return {
+      canonical: normalized,
+      display,
+      isSynonym: false
+    }
+  }
+
+  return null
+}
+
+export function syncCitySynonyms(records: Array<{ city: string; synonym: string }>) {
+  citySynonymLookup.clear()
+
+  for (const record of records) {
+    const canonicalOriginal = record.city?.trim()
+    const synonymOriginal = record.synonym?.trim()
+    if (!canonicalOriginal || !synonymOriginal) {
+      continue
+    }
+
+    const canonicalUpper = canonicalOriginal.toUpperCase()
+    const synonymUpper = synonymOriginal.toUpperCase()
+
+    addKnownCity(canonicalOriginal)
+
+    const canonicalDisplay = formatCityDisplay(canonicalOriginal)
+    canonicalCityDisplay.set(canonicalUpper, canonicalDisplay)
+
+    const synonymDisplay = formatCityDisplay(synonymOriginal)
+    citySynonymLookup.set(synonymUpper, {
+      canonical: canonicalUpper,
+      canonicalDisplay,
+      synonymDisplay
+    })
+  }
+}
+
 export interface ParsedDescription {
   originalDescription: string
   cleanDescription: string
   city: string | null
+  displayCity: string | null
+  matchedSynonym?: string | null
   confidence: number // 0-1, насколько уверены в результате
 }
 
@@ -71,6 +146,8 @@ export function extractCityFromDescription(description: string): ParsedDescripti
     originalDescription,
     cleanDescription: originalDescription,
     city: null,
+    displayCity: null,
+    matchedSynonym: null,
     confidence: 0
   }
 
@@ -82,6 +159,8 @@ export function extractCityFromDescription(description: string): ParsedDescripti
     let potentialCity: string | null = null
     let cleanDescription = originalDescription
     let confidence = 0
+    let displayCity: string | null = null
+    let matchedSynonym: string | null = null
 
     if (pattern === CITY_PATTERNS[0]) {
       // "BY НАЗВАНИЕ, ГОРОД" или "MN НАЗВАНИЕ, ГОРОД"
@@ -115,15 +194,24 @@ export function extractCityFromDescription(description: string): ParsedDescripti
       confidence = 0.5
     }
 
-    // Проверяем, является ли найденный текст известным городом
-    if (potentialCity && BELARUS_CITIES.includes(potentialCity)) {
-      confidence += 0.3 // Бонус за известный город
-      
+    if (potentialCity) {
+      const resolved = resolveCityVariant(potentialCity)
+      if (!resolved) {
+        continue
+      }
+
+      confidence += resolved.isSynonym ? 0.2 : 0.3
+      potentialCity = resolved.canonical
+      displayCity = resolved.display
+      matchedSynonym = resolved.isSynonym ? resolved.synonymDisplay || resolved.display : null
+
       if (confidence > bestMatch.confidence) {
         bestMatch = {
           originalDescription,
           cleanDescription: cleanDescription || originalDescription,
           city: potentialCity,
+          displayCity,
+          matchedSynonym,
           confidence: Math.min(confidence, 1.0)
         }
       }
@@ -133,6 +221,10 @@ export function extractCityFromDescription(description: string): ParsedDescripti
   // Дополнительная очистка описания
   if (bestMatch.cleanDescription) {
     bestMatch.cleanDescription = cleanDescription(bestMatch.cleanDescription)
+  }
+
+  if (bestMatch.city && !bestMatch.displayCity) {
+    bestMatch.displayCity = canonicalCityDisplay.get(bestMatch.city) || formatCityDisplay(bestMatch.city)
   }
 
   return bestMatch
@@ -157,9 +249,17 @@ function cleanDescription(description: string): string {
  * Добавляет новый город в список известных городов
  */
 export function addKnownCity(city: string): void {
-  const upperCity = city.toUpperCase()
+  if (!city) return
+  const trimmed = city.trim()
+  if (!trimmed) return
+
+  const upperCity = trimmed.toUpperCase()
   if (!BELARUS_CITIES.includes(upperCity)) {
     BELARUS_CITIES.push(upperCity)
+  }
+
+  if (!canonicalCityDisplay.has(upperCity)) {
+    canonicalCityDisplay.set(upperCity, formatCityDisplay(trimmed))
   }
 }
 
@@ -188,14 +288,26 @@ export function batchExtractCities(descriptions: string[]): ParsedDescription[] 
  * Получает статистику по городам из массива описаний
  */
 export function getCityStats(descriptions: string[]): Record<string, number> {
-  const stats: Record<string, number> = {}
-  
+  const stats = new Map<string, { count: number; display: string }>()
+
   descriptions.forEach(desc => {
     const parsed = extractCityFromDescription(desc)
     if (parsed.city && parsed.confidence > 0.5) {
-      stats[parsed.city] = (stats[parsed.city] || 0) + 1
+      const key = parsed.city
+      const display = parsed.displayCity || canonicalCityDisplay.get(key) || formatCityDisplay(key)
+      const existing = stats.get(key)
+      if (existing) {
+        existing.count += 1
+      } else {
+        stats.set(key, { count: 1, display })
+      }
     }
   })
-  
-  return stats
+
+  const result: Record<string, number> = {}
+  stats.forEach(({ display, count }) => {
+    result[display] = count
+  })
+
+  return result
 }

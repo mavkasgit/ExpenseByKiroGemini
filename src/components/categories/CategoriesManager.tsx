@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useToast } from '@/hooks/useToast'
-import { Category, CategoryGroup, CategoryKeyword } from '@/types'
+import { Category, CategoryGroup, CategoryKeywordWithSynonyms } from '@/types'
 import { moveCategoryToGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
 import { getAllKeywords } from '@/lib/actions/keywords'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
@@ -69,7 +69,7 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
 export function CategoriesManager({ initialGroups, initialCategories }: CategoriesManagerProps) {
   const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
   const [categories, setCategories] = useState<Category[]>(initialCategories)
-  const [allKeywords, setAllKeywords] = useState<CategoryKeyword[]>([]);
+  const [allKeywords, setAllKeywords] = useState<CategoryKeywordWithSynonyms[]>([]);
   const [userSettings, setUserSettings] = useState<UserSettings>({});
   const [activeGroup, setActiveGroup] = useState<CategoryGroup | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)

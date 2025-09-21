@@ -17,6 +17,7 @@ import { extractCityFromDescription } from '@/lib/utils/cityParser'
 import type { Category, CreateExpenseData, ColumnMapping } from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
 import type { TableInfo } from '@/lib/utils/bankStatementParsers'
+import { useCitySynonyms } from '@/hooks/useCitySynonyms'
 
 interface BulkExpenseInputProps {
   categories: Category[]
@@ -40,6 +41,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  useCitySynonyms()
 
   // Загрузка сохраненной схемы столбцов при инициализации
   const loadSavedColumnMapping = useCallback(() => {
@@ -288,7 +290,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           if (cityParseResult.confidence > 0.6) {
             cleanDescription = cityParseResult.cleanDescription
             if (cityParseResult.city) {
-              const cityNote = `Город: ${cityParseResult.city}`
+              const cityLabel = cityParseResult.displayCity || cityParseResult.city
+              const cityNote = `Город: ${cityLabel}`
               notes = notes ? `${notes}\n${cityNote}` : cityNote
             }
           }
@@ -370,7 +373,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           if (cityParseResult.confidence > 0.6) {
             cleanDescription = cityParseResult.cleanDescription
             if (cityParseResult.city) {
-              const cityNote = `Город: ${cityParseResult.city}`
+              const cityLabel = cityParseResult.displayCity || cityParseResult.city
+              const cityNote = `Город: ${cityLabel}`
               notes = notes ? `${notes}\n${cityNote}` : cityNote
             }
           }
