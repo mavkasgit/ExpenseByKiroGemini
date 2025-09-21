@@ -3,15 +3,15 @@ import { StickyPageHeaderWrapper } from '@/components/layout/StickyPageHeaderWra
 
 export default function CitiesPage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       <StickyPageHeaderWrapper
         title="Города и синонимы"
-        description="Управляйте городами и их синонимами для лучшей аналитики."
+        description="Добавляйте новые города, связывайте разные написания и поддерживайте единый справочник."
       />
 
-      <div className="container mx-auto px-4 pt-4 pb-8">
+      <main className="container mx-auto px-4 pb-12 pt-6">
         <CitySynonymManager />
-      </div>
+      </main>
     </div>
   )
 }

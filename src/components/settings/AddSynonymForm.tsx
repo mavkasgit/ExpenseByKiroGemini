@@ -40,15 +40,15 @@ export function AddSynonymForm({ city, onSynonymAdded }: AddSynonymFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2 mt-2">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <Input
-        placeholder="Добавить синоним"
+        placeholder="Добавить альтернативное написание"
         value={synonym}
-        onChange={(e) => setSynonym(e.target.value)}
+        onChange={(event) => setSynonym(event.target.value)}
         disabled={isSubmitting}
-        className="h-8 text-xs"
+        className="h-10 flex-1 text-sm"
       />
-      <Button type="submit" isLoading={isSubmitting} size="sm" variant="outline">
+      <Button type="submit" isLoading={isSubmitting} size="sm" variant="outline" className="sm:w-auto">
         Добавить
       </Button>
     </form>
