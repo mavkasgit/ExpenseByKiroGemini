@@ -139,6 +139,8 @@ type CityGroup = {
   coordinates: CityCoordinates | null;
 };
 
+type CityGroupWithCoordinates = CityGroup & { coordinates: CityCoordinates };
+
 export function CitySynonymManager() {
   const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -156,8 +158,22 @@ export function CitySynonymManager() {
   const [manualLon, setManualLon] = useState('')
   const [isSearchingCoordinates, setIsSearchingCoordinates] = useState(false)
   const mapRef = useRef<unknown>(null)
+  const overviewMapRef = useRef<unknown>(null)
   const lastGeocodedQuery = useRef('')
   const yandexApiKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY
+
+  const formatCityCoordinates = useCallback((coords: CityCoordinates | null) => {
+    if (!coords) {
+      return 'нет координат'
+    }
+    return `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`
+  }, [])
+
+  const handleSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+    }
+  }, [])
 
   const resetSelection = useCallback(() => {
     setSelectedCoordinates(null)
@@ -387,6 +403,54 @@ export function CitySynonymManager() {
     })
   }, [groupedSynonyms, searchTerm])
 
+  const citiesWithCoordinates = useMemo<CityGroupWithCoordinates[]>(
+    () =>
+      groupedSynonyms.filter((group): group is CityGroupWithCoordinates => Boolean(group.coordinates)),
+    [groupedSynonyms]
+  )
+
+  const overviewMapState = useMemo<MapState>(() => {
+    if (citiesWithCoordinates.length === 0) {
+      return createDefaultMapState()
+    }
+
+    const first = citiesWithCoordinates[0].coordinates
+    return {
+      center: [first.lat, first.lon],
+      zoom: citiesWithCoordinates.length === 1 ? 9 : DEFAULT_ZOOM
+    }
+  }, [citiesWithCoordinates])
+
+  useEffect(() => {
+    if (citiesWithCoordinates.length === 0) {
+      return
+    }
+
+    const instance = overviewMapRef.current as {
+      setBounds?: (bounds: [[number, number], [number, number]], options?: { checkZoomRange?: boolean; zoomMargin?: number }) => void
+      setCenter?: (center: [number, number], zoom?: number) => void
+    } | null
+
+    if (!instance) {
+      return
+    }
+
+    if (citiesWithCoordinates.length === 1) {
+      const coords = citiesWithCoordinates[0].coordinates
+      instance.setCenter?.([coords.lat, coords.lon], 9)
+      return
+    }
+
+    const latitudes = citiesWithCoordinates.map(city => city.coordinates.lat)
+    const longitudes = citiesWithCoordinates.map(city => city.coordinates.lon)
+    const bounds: [[number, number], [number, number]] = [
+      [Math.min(...latitudes), Math.min(...longitudes)],
+      [Math.max(...latitudes), Math.max(...longitudes)]
+    ]
+
+    instance.setBounds?.(bounds, { checkZoomRange: true, zoomMargin: 32 })
+  }, [citiesWithCoordinates])
+
   const stats = useMemo(() => {
     const totalCities = groupedSynonyms.length
     const citiesWithCustomSynonyms = groupedSynonyms.filter(group =>
@@ -569,61 +633,71 @@ export function CitySynonymManager() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
         <Card>
             <CardHeader>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <CardTitle>Справочник городов</CardTitle>
                   <CardDescription>
                     Рабочая область для управления городами и их альтернативными написаниями.
                   </CardDescription>
                 </div>
-                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-                  <div className="relative w-full sm:w-64">
-                    <Input
-                      placeholder="Поиск по городу или синониму"
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      className="pl-9"
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
-                  </div>
-                  <Button type="button" variant="outline" onClick={loadSynonyms} disabled={isLoading}>
-                    Обновить
-                  </Button>
-                </div>
+                <Button type="button" variant="outline" onClick={loadSynonyms} disabled={isLoading} className="self-start lg:self-auto">
+                  Обновить
+                </Button>
               </div>
             </CardHeader>
 
             <CardContent className="space-y-6">
               <form onSubmit={handleSubmit} className="space-y-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)] lg:items-end">
-                  <div className="space-y-2">
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
-                      Новый город
-                    </label>
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                    <div className="flex-1 space-y-2">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
+                        Новый город
+                      </label>
+                      <Input
+                        id="synonym-city"
+                        placeholder="Например: Санкт-Петербург"
+                        value={newCity}
+                        onChange={(event) => setNewCity(event.target.value)}
+                        disabled={isSubmitting}
+                        className="h-11"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => geocodeCity(newCity, { force: true })}
+                        isLoading={isSearchingCoordinates}
+                        disabled={!newCity.trim() || isSubmitting}
+                      >
+                        Найти на карте
+                      </Button>
+                      <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || !selectedCoordinates}>
+                        Добавить город
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">Введите название города и подтвердите координаты перед сохранением.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="city-search">
+                    Поиск по списку городов
+                  </label>
+                  <div className="relative">
                     <Input
-                      id="synonym-city"
-                      placeholder="Например: Санкт-Петербург"
-                      value={newCity}
-                      onChange={(event) => setNewCity(event.target.value)}
-                      disabled={isSubmitting}
-                      className="h-11"
+                      id="city-search"
+                      placeholder="Поиск по городу или синониму"
+                      value={searchTerm}
+                      onChange={(event) => setSearchTerm(event.target.value)}
+                      onKeyDown={handleSearchKeyDown}
+                      className="pl-9"
+                      type="search"
                     />
-                    <p className="text-xs text-slate-500">Введите название города и подтвердите координаты перед сохранением.</p>
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => geocodeCity(newCity, { force: true })}
-                      isLoading={isSearchingCoordinates}
-                      disabled={!newCity.trim() || isSubmitting}
-                    >
-                      Найти на карте
-                    </Button>
-                    <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || !selectedCoordinates}>
-                      Добавить город
-                    </Button>
-                  </div>
+                  <p className="text-xs text-slate-500">Найдите город в существующем списке для редактирования или удаления.</p>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
@@ -739,7 +813,12 @@ export function CitySynonymManager() {
                                 <MapPinMini active={hasCoordinates} />
                                 <span className="sr-only">{coordinatesHint}</span>
                               </span>
-                              <p className="text-sm font-medium text-slate-900">{canonicalName}</p>
+                              <p className="text-sm font-medium text-slate-900">
+                                {canonicalName}
+                                <span className="ml-2 text-xs font-normal text-slate-500">
+                                  ({formatCityCoordinates(group.coordinates ?? null)})
+                                </span>
+                              </p>
                             </div>
                             <p className="text-xs text-slate-500">
                               {synonymsForCity.length > 0
@@ -792,29 +871,71 @@ export function CitySynonymManager() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Статистика справочника</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                <span className="text-sm text-slate-500">Городов</span>
-                <span className="text-lg font-semibold text-slate-900">{stats.totalCities}</span>
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Карта всех городов</p>
+              <div className="h-[420px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                {yandexApiKey ? (
+                  citiesWithCoordinates.length > 0 ? (
+                    <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
+                      <YandexMap
+                        state={overviewMapState}
+                        width="100%"
+                        height="100%"
+                        modules={['geoObject.addon.balloon', 'geoObject.addon.hint']}
+                        instanceRef={(ref) => {
+                          overviewMapRef.current = ref ?? null
+                        }}
+                      >
+                        {citiesWithCoordinates.map(city => (
+                          <Placemark
+                            key={city.cityId}
+                            geometry={[city.coordinates.lat, city.coordinates.lon]}
+                            properties={{
+                              balloonContent: `<strong>${city.cityName}</strong><br/>${formatCityCoordinates(city.coordinates)}`,
+                              hintContent: `${city.cityName} (${formatCityCoordinates(city.coordinates)})`
+                            }}
+                          />
+                        ))}
+                      </YandexMap>
+                    </YMaps>
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
+                      Для отображения на карте добавьте координаты городов.
+                    </div>
+                  )
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-700">
+                    API-ключ для Яндекс Карт не настроен. Карта городов недоступна.
+                  </div>
+                )}
               </div>
-              <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                <span className="text-sm text-slate-500">Всего записей</span>
-                <span className="text-lg font-semibold text-slate-900">{stats.totalSynonyms}</span>
-              </div>
-              <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                <span className="text-sm text-slate-500">Альтернативных вариантов</span>
-                <span className="text-lg font-semibold text-slate-900">{stats.customSynonyms}</span>
-              </div>
-              <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                <span className="text-sm text-slate-500">Покрытие</span>
-                <span className="text-lg font-semibold text-slate-900">{stats.coverage}%</span>
-              </div>
-            </CardContent>
-        </Card>
+              <p className="text-xs text-slate-500">На карте отображаются все города с заданными координатами.</p>
+            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Статистика справочника</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-500">Городов</span>
+                  <span className="text-lg font-semibold text-slate-900">{stats.totalCities}</span>
+                </div>
+                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-500">Всего записей</span>
+                  <span className="text-lg font-semibold text-slate-900">{stats.totalSynonyms}</span>
+                </div>
+                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-500">Альтернативных вариантов</span>
+                  <span className="text-lg font-semibold text-slate-900">{stats.customSynonyms}</span>
+                </div>
+                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-500">Покрытие</span>
+                  <span className="text-lg font-semibold text-slate-900">{stats.coverage}%</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
       </div>
       <ConfirmationModal
         isOpen={!!cityToDelete}
