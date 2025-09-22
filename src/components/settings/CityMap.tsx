@@ -12,7 +12,13 @@ const HEIGHT = 420
 const RUSSIA_ID = 643
 
 interface CityMapProps {
-  cities: { id: string; name: string; total: number; alternate: number; coordinates: { lat: number; lon: number } | null }[]
+  cities: {
+    id: string;
+    name: string;
+    total: number;
+    alternate: number;
+    coordinates: { lat: number; lon: number; markerPreset?: string | null } | null;
+  }[];
 }
 
 interface Marker {
@@ -24,6 +30,7 @@ interface Marker {
   y: number
   radius: number
   hasCoordinates: boolean
+  color: string
 }
 
 const normaliseName = (value: string) => value.trim().toLowerCase()
@@ -83,6 +90,19 @@ const countries = feature(
 
 const russiaFeature = countries.features.find(item => item.id === RUSSIA_ID) as Feature<Geometry> | undefined
 
+const DEFAULT_MARKER_COLOR = '#2563EB'
+
+const MARKER_COLORS: Record<string, string> = {
+  'islands#blueIcon': '#2563EB',
+  'islands#redIcon': '#DC2626',
+  'islands#greenIcon': '#16A34A',
+  'islands#darkOrangeIcon': '#EA580C',
+  'islands#violetIcon': '#7C3AED',
+  'islands#blackIcon': '#1F2937',
+}
+
+const normalisePreset = (preset?: string | null) => preset ?? 'islands#blueIcon'
+
 const CityMapComponent = ({ cities }: CityMapProps) => {
   const projection = useMemo(() => {
     const proj = geoMercator()
@@ -137,6 +157,9 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
 
       const radius = Math.min(6 + city.alternate * 2, 14)
 
+      const preset = normalisePreset(city.coordinates?.markerPreset)
+      const color = MARKER_COLORS[preset] ?? DEFAULT_MARKER_COLOR
+
       return {
         id: city.id,
         name: city.name,
@@ -145,7 +168,8 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
         x: position[0],
         y: position[1],
         radius,
-        hasCoordinates
+        hasCoordinates,
+        color,
       }
     })
   }, [cities, projection])
@@ -179,13 +203,22 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
               aria-label={label}
             >
               <span
-                className="flex items-center justify-center rounded-full border text-xs font-semibold transition border-slate-400 bg-white text-slate-600 group-hover:border-slate-600 group-hover:text-slate-700"
-                style={{ width: `${marker.radius * 2}px`, height: `${marker.radius * 2}px` }}
+                className="flex items-center justify-center rounded-full border text-xs font-semibold transition bg-white"
+                style={{
+                  width: `${marker.radius * 2}px`,
+                  height: `${marker.radius * 2}px`,
+                  borderColor: marker.color,
+                  color: marker.color,
+                }}
               >
                 {marker.alternate}
               </span>
               <span
-                className="mt-1 block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition border-slate-200 bg-white text-slate-600 group-hover:border-slate-300 group-hover:text-slate-700"
+                className="mt-1 block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition bg-white"
+                style={{
+                  borderColor: marker.color,
+                  color: marker.color,
+                }}
               >
                 {marker.name}
                 {!marker.hasCoordinates && ' *'}
