@@ -15,6 +15,10 @@ export const citySynonymSchema = z.object({
   synonym: z.string().min(2, 'Синоним должен содержать минимум 2 символа').max(100, 'Синоним слишком длинный')
 })
 
+export const deleteCitySynonymSchema = z.object({
+  id: z.string().uuid('Некорректный идентификатор записи синонима')
+})
+
 export const deleteCitySchema = z.object({
   city: z.string().min(1, 'Название города не может быть пустым'),
 })
