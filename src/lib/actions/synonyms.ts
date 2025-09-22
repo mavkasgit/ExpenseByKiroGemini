@@ -18,7 +18,57 @@ import {
 } from '@/lib/validations/synonyms';
 import type { KeywordSynonym, CitySynonym, City } from '@/types';
 
-type CitySynonymWithCity = CitySynonym & { city: Pick<City, 'id' | 'name'> | null };
+type Coordinates = { lat: number; lon: number };
+
+type CitySynonymWithCity = CitySynonym & { city: Pick<City, 'id' | 'name' | 'coordinates'> | null };
+
+const geocoderApiKey =
+  process.env.YANDEX_GEOCODER_API_KEY ?? process.env.NEXT_PUBLIC_YANDEX_GEOCODER_API_KEY ?? null;
+
+async function geocodeCityCoordinates(cityName: string): Promise<Coordinates | null> {
+  if (!geocoderApiKey) {
+    return null;
+  }
+
+  const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${geocoderApiKey}&format=json&geocode=${encodeURIComponent(cityName)}`;
+
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      next: { revalidate: 0 }
+    });
+
+    if (!response.ok) {
+      console.error('Не удалось получить координаты города. Код ответа:', response.status, response.statusText);
+      return null;
+    }
+
+    const data = await response.json();
+    const featureMember = data?.response?.GeoObjectCollection?.featureMember ?? [];
+
+    if (featureMember.length === 0) {
+      return null;
+    }
+
+    const point = featureMember[0]?.GeoObject?.Point?.pos as string | undefined;
+    if (!point) {
+      return null;
+    }
+
+    const [lonString, latString] = point.split(' ');
+    const lon = Number.parseFloat(lonString);
+    const lat = Number.parseFloat(latString);
+
+    if (Number.isNaN(lat) || Number.isNaN(lon)) {
+      return null;
+    }
+
+    return { lat, lon } satisfies Coordinates;
+  } catch (error) {
+    console.error('Ошибка при геокодировании города', cityName, error);
+    return null;
+  }
+}
 
 export async function createKeywordSynonym(data: CreateKeywordSynonymData) {
   const supabase = await createServerClient();
@@ -98,7 +148,7 @@ export async function getCitySynonyms() {
 
     const { data, error } = await supabase
       .from('city_synonyms')
-      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name)')
+      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates)')
       .eq('user_id', user.id);
 
     if (error) {
@@ -135,13 +185,13 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
     const validated = citySynonymSchema.parse(data);
     const trimmedSynonym = validated.synonym.trim();
 
-    let cityRecord: Pick<City, 'id' | 'name'> | null = null;
+    let cityRecord: Pick<City, 'id' | 'name' | 'coordinates'> | null = null;
     let cityId = validated.cityId ?? null;
 
     if (cityId) {
       const { data: existingCity, error: cityError } = await supabase
         .from('cities')
-        .select('id, name')
+        .select('id, name, coordinates')
         .eq('id', cityId)
         .eq('user_id', user.id)
         .single();
@@ -150,7 +200,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
         return { error: 'Город не найден' };
       }
 
-      cityRecord = existingCity as Pick<City, 'id' | 'name'>;
+      cityRecord = existingCity as Pick<City, 'id' | 'name' | 'coordinates'>;
       cityId = cityRecord.id;
     } else {
       const cityName = validated.city?.trim();
@@ -178,7 +228,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
           user_id: user.id,
           updated_at: timestamp
         })
-        .select('id, name')
+        .select('id, name, coordinates')
         .single();
 
       if (createCityError || !newCity) {
@@ -186,8 +236,23 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
         return { error: 'Не удалось создать город' };
       }
 
-      cityRecord = newCity as Pick<City, 'id' | 'name'>;
+      cityRecord = newCity as Pick<City, 'id' | 'name' | 'coordinates'>;
       cityId = cityRecord.id;
+
+      const geocoded = await geocodeCityCoordinates(cityName);
+      if (geocoded) {
+        const { error: updateError } = await supabase
+          .from('cities')
+          .update({ coordinates: geocoded, updated_at: timestamp })
+          .eq('id', cityId)
+          .eq('user_id', user.id);
+
+        if (updateError) {
+          console.error('Не удалось сохранить координаты нового города:', updateError);
+        } else {
+          cityRecord = { ...cityRecord, coordinates: geocoded };
+        }
+      }
     }
 
     if (!cityId || !cityRecord) {
