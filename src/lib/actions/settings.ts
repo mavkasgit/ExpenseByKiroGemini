@@ -123,8 +123,17 @@ export async function deleteAllUserData() {
   try {
     const deletedItems: string[] = []
 
+    type SupabaseTable =
+      | 'expenses'
+      | 'keyword_synonyms'
+      | 'unrecognized_keywords'
+      | 'category_keywords'
+      | 'city_synonyms'
+      | 'categories'
+      | 'category_groups'
+
     const deleteWithCheck = async (
-      table: string,
+      table: SupabaseTable,
       description: string,
       message?: string,
     ) => {

@@ -60,6 +60,11 @@ export function InlineNotesEditor({ expense, onUpdate }: InlineNotesEditorProps)
           return
         }
 
+        if (!result.data) {
+          showToast('Не удалось обновить примечание', 'error')
+          return
+        }
+
         onUpdate(result.data)
         setIsEditing(false)
         showToast('Примечание обновлено', 'success')

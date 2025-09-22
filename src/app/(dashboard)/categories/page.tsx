@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation'
+
 import { createServerClient } from '@/lib/supabase/server'
 import { CategoriesManager } from '@/components/categories/CategoriesManager'
 import { StickyPageHeaderWrapper } from '@/components/layout/StickyPageHeaderWrapper'
@@ -6,17 +8,23 @@ export default async function CategoriesPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  if (!user?.id) {
+    redirect('/login')
+  }
+
+  const userId = user.id
+
   // Параллельно получаем категории и группы для оптимизации
   const [categoriesResult, groupsResult] = await Promise.all([
     supabase
       .from('categories')
       .select('*')
-      .eq('user_id', user?.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false }),
     supabase
       .from('category_groups')
       .select('*')
-      .eq('user_id', user?.id)
+      .eq('user_id', userId)
       .order('sort_order', { ascending: true })
   ])
 
@@ -28,7 +36,7 @@ export default async function CategoriesPage() {
       />
 
       <div className="container mx-auto px-4 pt-4 pb-8">
-        <CategoriesManager 
+        <CategoriesManager
           initialCategories={categoriesResult.data || []}
           initialGroups={groupsResult.data || []}
         />

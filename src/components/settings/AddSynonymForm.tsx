@@ -6,11 +6,12 @@ import { useToast } from '@/hooks/useToast'
 import { createCitySynonym } from '@/lib/actions/synonyms'
 
 interface AddSynonymFormProps {
-  city: string
+  cityId: string
+  cityName: string
   onSynonymAdded: () => void
 }
 
-export function AddSynonymForm({ city, onSynonymAdded }: AddSynonymFormProps) {
+export function AddSynonymForm({ cityId, cityName, onSynonymAdded }: AddSynonymFormProps) {
   const [synonym, setSynonym] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { showToast } = useToast()
@@ -24,7 +25,7 @@ export function AddSynonymForm({ city, onSynonymAdded }: AddSynonymFormProps) {
 
     setIsSubmitting(true)
     try {
-      const result = await createCitySynonym({ city, synonym: synonym.trim() })
+      const result = await createCitySynonym({ cityId, synonym: synonym.trim() })
       if (result.error) {
         showToast(result.error, 'error')
       } else {
@@ -42,7 +43,7 @@ export function AddSynonymForm({ city, onSynonymAdded }: AddSynonymFormProps) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <Input
-        placeholder="Добавить альтернативное написание"
+        placeholder={`Добавить альтернативное написание для «${cityName}»`}
         value={synonym}
         onChange={(event) => setSynonym(event.target.value)}
         disabled={isSubmitting}
