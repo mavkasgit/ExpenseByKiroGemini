@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Button, Input, Modal, ConfirmationModal } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
@@ -9,7 +9,7 @@ import { updateCityCoordinates } from '@/lib/actions/cities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser';
 import type { CitySynonymWithCity } from '@/types';
 import { AddSynonymForm } from './AddSynonymForm';
-import { CityMap } from './CityMap';
+import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps';
 
 type CityCoordinates = { lat: number; lon: number };
 
@@ -44,6 +44,73 @@ const parseCoordinates = (value: unknown): CityCoordinates | null => {
   return { lat: latNumber, lon: lonNumber };
 };
 
+const parseManualCoordinatePair = (lat: string, lon: string): CityCoordinates | null => {
+  const latNumber = toNumber(normaliseCoordinateInput(lat));
+  const lonNumber = toNumber(normaliseCoordinateInput(lon));
+
+  if (latNumber === null || lonNumber === null) {
+    return null;
+  }
+
+  return { lat: latNumber, lon: lonNumber };
+};
+
+type MapState = {
+  center: [number, number];
+  zoom: number;
+};
+
+const DEFAULT_CENTER: [number, number] = [55.751574, 37.573856];
+const DEFAULT_ZOOM = 4;
+
+const createDefaultMapState = (): MapState => ({
+  center: [...DEFAULT_CENTER] as [number, number],
+  zoom: DEFAULT_ZOOM,
+});
+
+const normaliseCoordinateInput = (value: string) => value.replace(',', '.');
+
+const coordinatesAreEqual = (a: CityCoordinates | null, b: CityCoordinates | null) => {
+  if (!a && !b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+};
+
+const extractEventCoordinates = (event: unknown): [number, number] | null => {
+  if (!event || typeof (event as { get?: unknown }).get !== 'function') {
+    return null;
+  }
+  const coords = (event as { get: (key: string) => unknown }).get('coords');
+  if (!Array.isArray(coords) || coords.length < 2) {
+    return null;
+  }
+  const [lat, lon] = coords as [number, number];
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    return null;
+  }
+  return [lat, lon];
+};
+
+const extractPlacemarkCoordinates = (target: unknown): [number, number] | null => {
+  const geometry = (target as { geometry?: { getCoordinates?: () => unknown } })?.geometry;
+  if (!geometry || typeof geometry.getCoordinates !== 'function') {
+    return null;
+  }
+  const coords = geometry.getCoordinates();
+  if (!Array.isArray(coords) || coords.length < 2) {
+    return null;
+  }
+  const [lat, lon] = coords as [number, number];
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    return null;
+  }
+  return [lat, lon];
+};
+
 const MapPinMini = ({ active }: { active: boolean }) => (
   <svg
     viewBox="0 0 24 24"
@@ -56,14 +123,6 @@ const MapPinMini = ({ active }: { active: boolean }) => (
     />
   </svg>
 );
-
-interface CitySummary {
-  id: string;
-  name: string;
-  total: number;
-  alternate: number;
-  coordinates: CityCoordinates | null;
-}
 
 interface CitySynonymRecord {
   id: number;
@@ -90,8 +149,144 @@ export function CitySynonymManager() {
   const [cityToDelete, setCityToDelete] = useState<{ id: string; name: string } | null>(null)
   const [cityToEdit, setCityToEdit] = useState<{ id: string; name: string } | null>(null)
   const [newCityName, setNewCityName] = useState('')
-  const [isGeocoding, setIsGeocoding] = useState<string | null>(null);
   const { showToast } = useToast()
+  const [mapState, setMapState] = useState<MapState>(() => createDefaultMapState())
+  const [selectedCoordinates, setSelectedCoordinates] = useState<CityCoordinates | null>(null)
+  const [manualLat, setManualLat] = useState('')
+  const [manualLon, setManualLon] = useState('')
+  const [isSearchingCoordinates, setIsSearchingCoordinates] = useState(false)
+  const mapRef = useRef<unknown>(null)
+  const lastGeocodedQuery = useRef('')
+  const yandexApiKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY
+
+  const resetSelection = useCallback(() => {
+    setSelectedCoordinates(null)
+    setManualLat('')
+    setManualLon('')
+    setMapState(createDefaultMapState())
+    lastGeocodedQuery.current = ''
+  }, [])
+
+  const focusOnCoordinates = useCallback((coords: CityCoordinates) => {
+    setMapState(prev => {
+      const nextZoom = Math.max(prev.zoom, 10)
+      const instance = mapRef.current as { setCenter?: (center: [number, number], zoom?: number) => void } | null
+      instance?.setCenter?.([coords.lat, coords.lon], nextZoom)
+      return {
+        center: [coords.lat, coords.lon],
+        zoom: nextZoom
+      }
+    })
+  }, [])
+
+  const applyCoordinates = useCallback((coords: CityCoordinates) => {
+    setSelectedCoordinates(prev => {
+      if (coordinatesAreEqual(prev, coords)) {
+        return prev
+      }
+      return coords
+    })
+    setManualLat(coords.lat.toFixed(6))
+    setManualLon(coords.lon.toFixed(6))
+    focusOnCoordinates(coords)
+  }, [focusOnCoordinates])
+
+  const applyManualCoordinates = useCallback((options: { silentOnEmpty?: boolean } = {}) => {
+    const { silentOnEmpty = false } = options
+    const trimmedLat = manualLat.trim()
+    const trimmedLon = manualLon.trim()
+
+    if (!trimmedLat || !trimmedLon) {
+      if (!silentOnEmpty) {
+        showToast('Введите широту и долготу', 'warning')
+      }
+      return
+    }
+
+    const parsed = parseManualCoordinatePair(trimmedLat, trimmedLon)
+    if (!parsed) {
+      showToast('Введите корректные координаты', 'error')
+      return
+    }
+
+    applyCoordinates(parsed)
+  }, [manualLat, manualLon, applyCoordinates, showToast])
+
+  const geocodeCity = useCallback(async (query: string, options: { silent?: boolean; force?: boolean } = {}) => {
+    const { silent = false, force = false } = options
+    const trimmed = query.trim()
+
+    if (!trimmed) {
+      if (!silent) {
+        showToast('Введите название города', 'warning')
+      }
+      return null
+    }
+
+    if (!yandexApiKey) {
+      if (!silent) {
+        showToast('API ключ для Яндекс Карт не найден', 'error')
+      }
+      return null
+    }
+
+    if (!force && silent && trimmed === lastGeocodedQuery.current) {
+      return null
+    }
+
+    setIsSearchingCoordinates(true)
+    try {
+      const response = await fetch(
+        `https://geocode-maps.yandex.ru/1.x/?apikey=${yandexApiKey}&format=json&geocode=${encodeURIComponent(trimmed)}`
+      )
+      const data = await response.json()
+      const geoObjects = data?.response?.GeoObjectCollection?.featureMember ?? []
+
+      if (geoObjects.length === 0) {
+        if (!silent) {
+          showToast(`Город "${trimmed}" не найден`, 'error')
+        }
+        return null
+      }
+
+      const point = geoObjects[0]?.GeoObject?.Point?.pos as string | undefined
+      if (!point) {
+        if (!silent) {
+          showToast('Не удалось определить координаты города', 'error')
+        }
+        return null
+      }
+
+      const [lonString, latString] = point.split(' ')
+      const lat = Number.parseFloat(latString)
+      const lon = Number.parseFloat(lonString)
+
+      if (Number.isNaN(lat) || Number.isNaN(lon)) {
+        if (!silent) {
+          showToast('Получены некорректные координаты города', 'error')
+        }
+        return null
+      }
+
+      const coords = { lat, lon }
+      lastGeocodedQuery.current = trimmed
+      applyCoordinates(coords)
+
+      if (!silent) {
+        showToast(`Город ${trimmed} найден`, 'success')
+      }
+
+      return coords
+    } catch (error) {
+      console.error('Geocoding API error:', error)
+      if (!silent) {
+        showToast('Произошла ошибка при поиске города', 'error')
+      }
+      return null
+    } finally {
+      setIsSearchingCoordinates(false)
+    }
+  }, [applyCoordinates, showToast, yandexApiKey])
 
   const loadSynonyms = useCallback(async () => {
     setIsLoading(true)
@@ -132,6 +327,22 @@ export function CitySynonymManager() {
   useEffect(() => {
     loadSynonyms()
   }, [loadSynonyms])
+
+  useEffect(() => {
+    const trimmed = newCity.trim()
+    if (!trimmed) {
+      resetSelection()
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      geocodeCity(trimmed, { silent: true })
+    }, 700)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [newCity, geocodeCity, resetSelection])
 
   const groupedSynonyms = useMemo(() => {
     const map = new Map<string, CityGroup>()
@@ -193,23 +404,15 @@ export function CitySynonymManager() {
     }
   }, [groupedSynonyms, synonyms])
 
-  const citySummary: CitySummary[] = useMemo(() => {
-    return filteredGroupedSynonyms.map(group => {
-      const alternate = group.entries.filter(entry => entry.synonym.trim().toLowerCase() !== group.cityName.trim().toLowerCase()).length;
-      return {
-        id: group.cityId,
-        name: group.cityName,
-        total: group.entries.length,
-        alternate,
-        coordinates: group.coordinates ?? null
-      } satisfies CitySummary;
-    });
-  }, [filteredGroupedSynonyms]);
-
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!newCity.trim()) {
       showToast('Заполните название города', 'error')
+      return
+    }
+
+    if (!selectedCoordinates) {
+      showToast('Подтвердите координаты города', 'error')
       return
     }
 
@@ -223,6 +426,16 @@ export function CitySynonymManager() {
         const payload = result.data as CitySynonymWithCity
         const createdCityId = payload.city?.id ?? payload.city_id
         const createdCityName = payload.city?.name ?? cityName
+        const serverCoordinates = parseCoordinates(payload.city?.coordinates ?? null)
+        let effectiveCoordinates: CityCoordinates | null = selectedCoordinates
+
+        if (createdCityId && !coordinatesAreEqual(selectedCoordinates, serverCoordinates)) {
+          const updateResult = await updateCityCoordinates({ id: createdCityId, coordinates: selectedCoordinates })
+          if (updateResult?.error) {
+            showToast(updateResult.error, 'error')
+            effectiveCoordinates = serverCoordinates
+          }
+        }
 
         if (!createdCityId) {
           await loadSynonyms()
@@ -233,7 +446,7 @@ export function CitySynonymManager() {
               cityId: createdCityId,
               cityName: createdCityName,
               synonym: payload.synonym,
-              coordinates: parseCoordinates(payload.city?.coordinates ?? null)
+              coordinates: effectiveCoordinates ?? parseCoordinates(payload.city?.coordinates ?? null)
             }
             const updated = [...prev, newRecord]
             syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
@@ -242,6 +455,7 @@ export function CitySynonymManager() {
         }
         showToast('Город добавлен', 'success')
         setNewCity('')
+        resetSelection()
       }
     } catch (error) {
       console.error('Failed to create city', error)
@@ -350,58 +564,10 @@ export function CitySynonymManager() {
     }
   };
 
-  const handleGeocodeClick = async (cityId: string, cityName: string) => {
-    setIsGeocoding(cityId);
-    const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_GEOCODER_API_KEY;
-    if (!YANDEX_API_KEY) {
-      showToast('Не найден ключ API для Яндекс.Карт', 'error');
-      setIsGeocoding(null);
-      return;
-    }
-
-    const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${YANDEX_API_KEY}&format=json&geocode=${encodeURIComponent(cityName)}`;
-
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
-      const featureMember = data.response.GeoObjectCollection.featureMember;
-      if (featureMember.length > 0) {
-        const point = featureMember[0].GeoObject.Point.pos;
-        const [lon, lat] = point.split(' ').map(Number);
-        
-        const result = await updateCityCoordinates({ id: cityId, coordinates: { lat, lon } });
-        if (result.error) {
-          showToast(result.error, 'error');
-        } else {
-          showToast('Координаты успешно обновлены', 'success');
-          loadSynonyms(); // Reload data to show new coordinates if displayed
-        }
-      } else {
-        showToast('Не удалось найти координаты для этого города', 'error');
-      }
-    } catch (error) {
-      console.error(`Error geocoding city "${cityName}":`, error);
-      showToast('Ошибка при поиске координат', 'error');
-    } finally {
-      setIsGeocoding(null);
-    }
-  };
-
   return (
     <>
-      <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
         <Card>
-          <CardHeader>
-            <CardTitle>Интерактивная карта</CardTitle>
-            <CardDescription>Выберите город на схеме, чтобы открыть его карточку в списке.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CityMap cities={citySummary} />
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
-          <Card>
             <CardHeader>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -428,26 +594,124 @@ export function CitySynonymManager() {
             </CardHeader>
 
             <CardContent className="space-y-6">
-              <form
-                onSubmit={handleSubmit}
-                className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-end"
-              >
-                <div className="w-full sm:flex-1">
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
-                    Новый город
-                  </label>
-                  <Input
-                    id="synonym-city"
-                    placeholder="Например: Санкт-Петербург"
-                    value={newCity}
-                    onChange={(event) => setNewCity(event.target.value)}
-                    disabled={isSubmitting}
-                    className="h-11"
-                  />
+              <form onSubmit={handleSubmit} className="space-y-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)] lg:items-end">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
+                      Новый город
+                    </label>
+                    <Input
+                      id="synonym-city"
+                      placeholder="Например: Санкт-Петербург"
+                      value={newCity}
+                      onChange={(event) => setNewCity(event.target.value)}
+                      disabled={isSubmitting}
+                      className="h-11"
+                    />
+                    <p className="text-xs text-slate-500">Введите название города и подтвердите координаты перед сохранением.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => geocodeCity(newCity, { force: true })}
+                      isLoading={isSearchingCoordinates}
+                      disabled={!newCity.trim() || isSubmitting}
+                    >
+                      Найти на карте
+                    </Button>
+                    <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || !selectedCoordinates}>
+                      Добавить город
+                    </Button>
+                  </div>
                 </div>
-                <Button type="submit" isLoading={isSubmitting} className="h-11 sm:w-auto">
-                  Добавить город
-                </Button>
+
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Подтверждение координат</p>
+                    <div className="h-72 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                      {yandexApiKey ? (
+                        <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
+                          <YandexMap
+                            state={mapState}
+                            width="100%"
+                            height="100%"
+                            modules={['geoObject.addon.balloon', 'geoObject.addon.hint']}
+                            instanceRef={(ref) => {
+                              mapRef.current = ref ?? null
+                            }}
+                            onClick={(event: unknown) => {
+                              const coords = extractEventCoordinates(event)
+                              if (!coords) {
+                                return
+                              }
+                              const [lat, lon] = coords
+                              applyCoordinates({ lat, lon })
+                            }}
+                          >
+                            {selectedCoordinates && (
+                              <Placemark
+                                geometry={[selectedCoordinates.lat, selectedCoordinates.lon]}
+                                options={{ draggable: true }}
+                                onDragEnd={(event: { get: (key: string) => unknown }) => {
+                                  const coords = extractPlacemarkCoordinates(event.get('target'))
+                                  if (!coords) {
+                                    return
+                                  }
+                                  const [lat, lon] = coords
+                                  applyCoordinates({ lat, lon })
+                                }}
+                              />
+                            )}
+                          </YandexMap>
+                        </YMaps>
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-700">
+                          API-ключ для Яндекс Карт не настроен. Укажите координаты вручную.
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">Нажмите на карту или перетащите маркер, чтобы уточнить координаты.</p>
+                  </div>
+
+                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+                    <p className="text-sm font-medium text-slate-900">Ручной ввод координат</p>
+                    <div className="grid gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="manual-lat">
+                          Широта (lat)
+                        </label>
+                        <Input
+                          id="manual-lat"
+                          value={manualLat}
+                          onChange={(event) => setManualLat(normaliseCoordinateInput(event.target.value))}
+                          onBlur={() => applyManualCoordinates({ silentOnEmpty: true })}
+                          inputMode="decimal"
+                          placeholder="Например: 59.9386"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="manual-lon">
+                          Долгота (lon)
+                        </label>
+                        <Input
+                          id="manual-lon"
+                          value={manualLon}
+                          onChange={(event) => setManualLon(normaliseCoordinateInput(event.target.value))}
+                          onBlur={() => applyManualCoordinates({ silentOnEmpty: true })}
+                          inputMode="decimal"
+                          placeholder="Например: 30.3141"
+                        />
+                      </div>
+                    </div>
+                    <Button type="button" variant="secondary" onClick={() => applyManualCoordinates()} disabled={isSubmitting}>
+                      Применить координаты
+                    </Button>
+                    <p className="text-xs text-slate-500">
+                      Если автоматический поиск не помог, введите координаты вручную и нажмите «Применить».
+                    </p>
+                  </div>
+                </div>
               </form>
 
               <div className="space-y-3">
@@ -484,9 +748,6 @@ export function CitySynonymManager() {
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => group.cityId && handleGeocodeClick(group.cityId, canonicalName)} isLoading={isGeocoding === group.cityId} disabled={!group.cityId}>
-                              Координаты
-                            </Button>
                             <Button variant="outline" size="sm" onClick={(e) => group.cityId && handleEditClick(e, { id: group.cityId, name: canonicalName })} disabled={!group.cityId}>
                               Редактировать
                             </Button>
@@ -553,8 +814,7 @@ export function CitySynonymManager() {
                 <span className="text-lg font-semibold text-slate-900">{stats.coverage}%</span>
               </div>
             </CardContent>
-          </Card>
-        </div>
+        </Card>
       </div>
       <ConfirmationModal
         isOpen={!!cityToDelete}
