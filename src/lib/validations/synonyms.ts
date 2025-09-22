@@ -19,7 +19,18 @@ export const deleteCitySynonymSchema = z.object({
   id: z.string().uuid('Некорректный идентификатор записи синонима')
 })
 
+export const deleteCitySchema = z.object({
+  city: z.string().min(1, 'Название города не может быть пустым'),
+})
+
+export const updateCitySchema = z.object({
+  oldCityName: z.string().min(1, 'Старое название города не может быть пустым'),
+  newCityName: z.string().min(2, 'Новое название города должно содержать минимум 2 символа').max(100, 'Название города слишком длинное'),
+});
+
 export type CreateKeywordSynonymData = z.infer<typeof keywordSynonymSchema>
 export type DeleteKeywordSynonymData = z.infer<typeof deleteKeywordSynonymSchema>
 export type CreateCitySynonymData = z.infer<typeof citySynonymSchema>
 export type DeleteCitySynonymData = z.infer<typeof deleteCitySynonymSchema>
+export type DeleteCityData = z.infer<typeof deleteCitySchema>
+export type UpdateCityData = z.infer<typeof updateCitySchema>;

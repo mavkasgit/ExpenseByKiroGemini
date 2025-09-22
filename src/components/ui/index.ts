@@ -11,6 +11,9 @@ export type { CardProps } from './Card'
 export { Modal, ModalHeader, ModalBody, ModalFooter } from './Modal'
 export type { ModalProps } from './Modal'
 
+export { ConfirmationModal } from './ConfirmationModal'
+export type { ConfirmationModalProps } from './ConfirmationModal'
+
 export { ToastProvider, useToast } from './Toast'
 export type { Toast } from './Toast'
 

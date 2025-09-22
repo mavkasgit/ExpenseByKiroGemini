@@ -13,8 +13,6 @@ const RUSSIA_ID = 643
 
 interface CityMapProps {
   cities: { name: string; total: number; alternate: number }[]
-  activeCity: string | null
-  onSelectCity: (city: string) => void
 }
 
 interface Marker {
@@ -84,7 +82,7 @@ const countries = feature(
 
 const russiaFeature = countries.features.find(item => item.id === RUSSIA_ID) as Feature<Geometry> | undefined
 
-const CityMapComponent = ({ cities, activeCity, onSelectCity }: CityMapProps) => {
+const CityMapComponent = ({ cities }: CityMapProps) => {
   const projection = useMemo(() => {
     const proj = geoMercator()
     if (russiaFeature) {
@@ -169,40 +167,28 @@ const CityMapComponent = ({ cities, activeCity, onSelectCity }: CityMapProps) =>
         {markers.map(marker => {
           const left = `${(marker.x / WIDTH) * 100}%`
           const top = `${(marker.y / HEIGHT) * 100}%`
-          const isActive = activeCity === marker.name
           const label = `${marker.name}. Всего записей: ${marker.total}. Альтернативных написаний: ${marker.alternate}`
 
           return (
-            <button
+            <div
               key={marker.name}
-              type="button"
-              onClick={() => onSelectCity(marker.name)}
               className="group absolute -translate-x-1/2 -translate-y-1/2 transform"
               style={{ left, top }}
               aria-label={label}
-              aria-pressed={isActive}
             >
               <span
-                className={`flex items-center justify-center rounded-full border text-xs font-semibold transition ${
-                  isActive
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-400 bg-white text-slate-600 group-hover:border-slate-600 group-hover:text-slate-700'
-                }`}
+                className="flex items-center justify-center rounded-full border text-xs font-semibold transition border-slate-400 bg-white text-slate-600 group-hover:border-slate-600 group-hover:text-slate-700"
                 style={{ width: `${marker.radius * 2}px`, height: `${marker.radius * 2}px` }}
               >
                 {marker.alternate}
               </span>
               <span
-                className={`mt-1 block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition ${
-                  isActive
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 group-hover:border-slate-300 group-hover:text-slate-700'
-                }`}
+                className="mt-1 block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] transition border-slate-200 bg-white text-slate-600 group-hover:border-slate-300 group-hover:text-slate-700"
               >
                 {marker.name}
                 {!marker.hasCoordinates && ' *'}
               </span>
-            </button>
+            </div>
           )
         })}
       </div>

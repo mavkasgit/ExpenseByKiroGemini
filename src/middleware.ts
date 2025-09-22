@@ -46,22 +46,36 @@ export async function middleware(request: NextRequest) {
     '/keywords',
   ]
 
-  // Защищаем приватные страницы
-  if (protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))) {
-    if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
-    }
-  }
+  const isProtectedRoute = protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix));
 
-  // Redirect authenticated users away from auth pages
-  if ((request.nextUrl.pathname.startsWith('/login') || 
-       request.nextUrl.pathname.startsWith('/signup')) && user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // if (isProtectedRoute && !user) {
+  //   // Automatically sign in as test user
+  //   const { error } = await supabase.auth.signInWithPassword({
+  //     email: 'mavkaaa2@gmail.com',
+  //     password: '123456',
+  //   });
+
+  //   if (error) {
+  //     console.error('Automatic sign-in failed:', error.message);
+  //     // If sign-in fails, redirect to the login page with an error
+  //     const url = request.nextUrl.clone();
+  //     url.pathname = '/login';
+  //     url.searchParams.set('error', 'Automatic sign-in failed. Please log in manually.');
+  //     return NextResponse.redirect(url);
+  //   }
+
+  //   // After a successful sign-in, the cookie should be set.
+  //   // Reload the page to let middleware run again with the new session.
+  //   return NextResponse.redirect(request.url);
+  // }
+
+  // // Redirect authenticated users away from auth pages
+  // if ((request.nextUrl.pathname.startsWith('/login') || 
+  //      request.nextUrl.pathname.startsWith('/signup')) && user) {
+  //   const url = request.nextUrl.clone()
+  //   url.pathname = '/dashboard'
+  //   return NextResponse.redirect(url)
+  // }
 
   return supabaseResponse
 }

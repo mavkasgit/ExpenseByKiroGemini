@@ -120,7 +120,6 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
         setToast({ message: result.error, type: 'error' })
       } else {
         setToast({ message: 'Ключевое слово успешно добавлено', type: 'success' })
-        setIsAddModalOpen(false)
         setFormData({ keyword: '', category_id: category.id })
         onKeywordChange?.()
       }
@@ -202,19 +201,6 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
 
   const renderAddEditModals = () => (
     <>
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Добавить ключевое слово">
-        <form onSubmit={handleAddKeyword} className="space-y-4">
-          <div>
-            <label htmlFor="keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово *</label>
-            <Input id="keyword" type="text" value={formData.keyword} onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} placeholder="например: taxi" required />
-          </div>
-          <div className="flex justify-end space-x-3 pt-4">
-            <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Отмена</Button>
-            <Button type="submit" isLoading={isSubmitting}>{isSubmitting ? 'Добавление...' : 'Добавить'}</Button>
-          </div>
-        </form>
-      </Modal>
-
       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Редактировать ключевое слово">
         <form onSubmit={handleEditKeyword} className="space-y-4">
           <div>
@@ -239,10 +225,19 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">Управляйте ключевыми словами для автоматической категоризации.</p>
-          <Button onClick={() => { setFormData({ keyword: '', category_id: category.id }); setIsAddModalOpen(true); }} disabled={isSubmitting}>
-            Добавить ключевое слово
-          </Button>
         </div>
+
+        <form onSubmit={handleAddKeyword} className="flex items-center gap-2 p-4 border-b border-gray-200">
+          <Input 
+            value={formData.keyword} 
+            onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} 
+            placeholder="Новое ключевое слово..." 
+            required 
+          />
+          <Button type="submit" isLoading={isSubmitting}>
+            Добавить
+          </Button>
+        </form>
 
         {error && <ErrorMessage error={error} onDismiss={() => setError(null)} showDismiss />}
 
@@ -337,3 +332,4 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
     </Modal>
   )
 }
+

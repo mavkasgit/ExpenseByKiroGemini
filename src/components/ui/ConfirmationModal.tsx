@@ -3,7 +3,7 @@
 import { Modal } from './Modal'
 import { Button } from './Button'
 
-interface ConfirmationModalProps {
+export interface ConfirmationModalProps {
   isOpen: boolean
   onClose: () => void
   onConfirm: () => void
