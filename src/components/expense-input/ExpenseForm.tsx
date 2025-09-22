@@ -48,7 +48,7 @@ export function ExpenseForm({
     notes: defaultValues?.notes || '',
     expense_date: defaultValues?.expense_date || getCurrentDateISO(),
     expense_time: defaultValues?.expense_time || '',
-    city: defaultValues?.city || '',
+    city: defaultValues?.city_id || '',
     input_method: 'single' as const
   })
 
@@ -166,6 +166,7 @@ export function ExpenseForm({
           notes: formData.notes || undefined,
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
+          city_id: formData.city || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит или поместит в неопознанные
         }

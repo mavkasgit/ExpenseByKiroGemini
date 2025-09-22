@@ -6,14 +6,9 @@ import { useToast } from '@/hooks/useToast'
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCityName } from '@/lib/actions/synonyms'
 import { updateCityCoordinates } from '@/lib/actions/cities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
-import type { CitySynonym } from '@/types'
+import type { CitySynonymWithCity } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
 import { CityMap } from './CityMap'
-
-interface SynonymFormState {
-  city: string
-  synonym: string
-}
 
 interface CitySummary {
   name: string
@@ -21,10 +16,17 @@ interface CitySummary {
   alternate: number
 }
 
+interface CitySynonymRecord {
+  id: number
+  cityId: string
+  cityName: string
+  synonym: string
+}
+
 export function CitySynonymManager() {
-  const [synonyms, setSynonyms] = useState<CitySynonym[]>([])
+  const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [formState, setFormState] = useState<SynonymFormState>({ city: '', synonym: '' })
+  const [newCity, setNewCity] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState('')
@@ -41,8 +43,24 @@ export function CitySynonymManager() {
       if (result.error) {
         showToast(result.error, 'error')
       } else if (result.success && result.data) {
-        setSynonyms(result.data)
-        syncCitySynonyms(result.data.map(record => ({ city: record.city, synonym: record.synonym })))
+        const records = (result.data as CitySynonymWithCity[])
+          .map((record) => {
+            const cityId = record.city?.id ?? record.city_id
+            const cityName = record.city?.name ?? record.synonym
+            if (!cityId) {
+              return null
+            }
+            return {
+              id: Number(record.id),
+              cityId,
+              cityName,
+              synonym: record.synonym
+            } satisfies CitySynonymRecord
+          })
+          .filter((record): record is CitySynonymRecord => record !== null)
+
+        setSynonyms(records)
+        syncCitySynonyms(records.map(record => ({ city: record.cityName, synonym: record.synonym })))
       }
     } catch (error) {
       console.error('Failed to load city synonyms', error)
@@ -57,19 +75,28 @@ export function CitySynonymManager() {
   }, [loadSynonyms])
 
   const groupedSynonyms = useMemo(() => {
-    const map = new Map<string, { mainId: string | null, entries: CitySynonym[] }>()
+    const map = new Map<string, { cityId: string; cityName: string; entries: CitySynonymRecord[] }>()
+
     synonyms.forEach(record => {
-      const cityKey = record.city.trim() || 'Без города'
-      if (!map.has(cityKey)) {
-        map.set(cityKey, { mainId: null, entries: [] })
+      const groupKey = record.cityId
+      if (!groupKey) {
+        return
       }
-      const group = map.get(cityKey)!
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
+          cityId: groupKey,
+          cityName: record.cityName,
+          entries: []
+        })
+      }
+      const group = map.get(groupKey)!
       group.entries.push(record)
-      if (record.synonym === record.city) {
-        group.mainId = record.id
+      if (!group.cityName && record.cityName) {
+        group.cityName = record.cityName
       }
     })
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ru'))
+
+    return Array.from(map.values()).sort((a, b) => a.cityName.localeCompare(b.cityName, 'ru'))
   }, [synonyms])
 
   const filteredGroupedSynonyms = useMemo(() => {
@@ -78,8 +105,8 @@ export function CitySynonymManager() {
       return groupedSynonyms
     }
 
-    return groupedSynonyms.filter(([city, group]) => {
-      if (city.toLowerCase().includes(term)) {
+    return groupedSynonyms.filter(group => {
+      if (group.cityName.toLowerCase().includes(term)) {
         return true
       }
       return group.entries.some(entry => entry.synonym.toLowerCase().includes(term))
@@ -88,11 +115,11 @@ export function CitySynonymManager() {
 
   const stats = useMemo(() => {
     const totalCities = groupedSynonyms.length
-    const citiesWithCustomSynonyms = groupedSynonyms.filter(([, group]) =>
-      group.entries.some(entry => entry.synonym.trim() && entry.synonym !== entry.city)
+    const citiesWithCustomSynonyms = groupedSynonyms.filter(group =>
+      group.entries.some(entry => entry.synonym.trim() && entry.synonym.trim().toLowerCase() !== group.cityName.trim().toLowerCase())
     ).length
     const totalSynonyms = synonyms.length
-    const customSynonyms = synonyms.filter(entry => entry.synonym !== entry.city).length
+    const customSynonyms = synonyms.filter(entry => entry.synonym.trim().toLowerCase() !== entry.cityName.trim().toLowerCase()).length
     const coverage = totalCities === 0 ? 0 : Math.round((citiesWithCustomSynonyms / totalCities) * 100)
 
     return {
@@ -104,10 +131,10 @@ export function CitySynonymManager() {
   }, [groupedSynonyms, synonyms])
 
   const citySummary: CitySummary[] = useMemo(() => {
-    return filteredGroupedSynonyms.map(([city, group]) => {
-      const alternate = group.entries.filter(entry => entry.synonym !== city).length
+    return filteredGroupedSynonyms.map(group => {
+      const alternate = group.entries.filter(entry => entry.synonym.trim().toLowerCase() !== group.cityName.trim().toLowerCase()).length
       return {
-        name: city,
+        name: group.cityName,
         total: group.entries.length,
         alternate
       }
@@ -116,25 +143,39 @@ export function CitySynonymManager() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!formState.city.trim()) {
+    if (!newCity.trim()) {
       showToast('Заполните название города', 'error')
       return
     }
 
     setIsSubmitting(true)
     try {
-      const cityName = formState.city.trim()
+      const cityName = newCity.trim()
       const result = await createCitySynonym({ city: cityName, synonym: cityName })
       if (result.error) {
         showToast(result.error, 'error')
       } else if (result.success && result.data) {
-        setSynonyms(prev => {
-          const updated = [...prev, result.data]
-          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })))
-          return updated
-        })
+        const payload = result.data as CitySynonymWithCity
+        const createdCityId = payload.city?.id ?? payload.city_id
+        const createdCityName = payload.city?.name ?? cityName
+
+        if (!createdCityId) {
+          await loadSynonyms()
+        } else {
+          setSynonyms(prev => {
+            const newRecord: CitySynonymRecord = {
+              id: Number(payload.id),
+              cityId: createdCityId,
+              cityName: createdCityName,
+              synonym: payload.synonym
+            }
+            const updated = [...prev, newRecord]
+            syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
+            return updated
+          })
+        }
         showToast('Город добавлен', 'success')
-        setFormState({ city: '', synonym: '' })
+        setNewCity('')
       }
     } catch (error) {
       console.error('Failed to create city', error)
@@ -144,8 +185,9 @@ export function CitySynonymManager() {
     }
   }
 
-  const handleDeleteSynonym = async (synonym: CitySynonym) => {
-    setDeletingMap(prev => ({ ...prev, [synonym.id]: true }))
+  const handleDeleteSynonym = async (synonym: CitySynonymRecord) => {
+    const key = synonym.id.toString()
+    setDeletingMap(prev => ({ ...prev, [key]: true }))
     try {
       const result = await deleteCitySynonym({ id: synonym.id })
       if (result.error) {
@@ -153,7 +195,7 @@ export function CitySynonymManager() {
       } else {
         setSynonyms(prev => {
           const updated = prev.filter(item => item.id !== synonym.id)
-          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })))
+          syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
           return updated
         })
         showToast('Синоним удален', 'success')
@@ -162,7 +204,7 @@ export function CitySynonymManager() {
       console.error('Failed to delete city synonym', error)
       showToast('Не удалось удалить синоним', 'error')
     } finally {
-      setDeletingMap(prev => ({ ...prev, [synonym.id]: false }))
+      setDeletingMap(prev => ({ ...prev, [key]: false }))
     }
   }
 
@@ -181,8 +223,8 @@ export function CitySynonymManager() {
         showToast(result.error, 'error');
       } else {
         setSynonyms(prev => {
-          const updated = prev.filter(s => s.city !== cityToDelete.name);
-          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })));
+          const updated = prev.filter(s => s.cityId !== cityToDelete.id);
+          syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
           return updated;
         });
         showToast('Город и все его синонимы удалены', 'success');
@@ -214,13 +256,20 @@ export function CitySynonymManager() {
       if (result.error) {
         showToast(result.error, 'error');
       } else {
+        const trimmedName = newCityName.trim();
         setSynonyms(prev => {
-          const updated = prev.map(s => 
-            s.city === cityToEdit.name 
-              ? { ...s, city: newCityName.trim(), synonym: s.synonym === cityToEdit.name ? newCityName.trim() : s.synonym } 
-              : s
-          );
-          syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })));
+          const updated = prev.map(s => {
+            if (s.cityId !== cityToEdit.id) {
+              return s;
+            }
+            const isCanonical = s.synonym.trim().toLowerCase() === cityToEdit.name.trim().toLowerCase();
+            return {
+              ...s,
+              cityName: trimmedName,
+              synonym: isCanonical ? trimmedName : s.synonym
+            };
+          });
+          syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
           return updated;
         });
         showToast('Название города обновлено', 'success');
@@ -313,8 +362,8 @@ export function CitySynonymManager() {
                 <Input
                   id="synonym-city"
                   placeholder="Например: Санкт-Петербург"
-                  value={formState.city}
-                  onChange={(event) => setFormState(prev => ({ ...prev, city: event.target.value, synonym: '' }))}
+                  value={newCity}
+                  onChange={(event) => setNewCity(event.target.value)}
                   disabled={isSubmitting}
                   className="h-11"
                 />
@@ -334,17 +383,17 @@ export function CitySynonymManager() {
                   Ничего не найдено. Проверьте запрос или добавьте новый город.
                 </div>
               ) : (
-                filteredGroupedSynonyms.map(([city, group]) => {
-                  const synonymsForCity = group.entries.filter(entry => entry.synonym !== city)
-                  const mainId = group.mainId;
+                filteredGroupedSynonyms.map(group => {
+                  const canonicalName = group.cityName
+                  const synonymsForCity = group.entries.filter(entry => entry.synonym.trim().toLowerCase() !== canonicalName.trim().toLowerCase())
 
                   return (
-                    <div key={city} className="rounded-lg border border-slate-200 bg-white">
+                    <div key={group.cityId} className="rounded-lg border border-slate-200 bg-white">
                       <div
                         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                       >
                         <div>
-                          <p className="text-sm font-medium text-slate-900">{city}</p>
+                          <p className="text-sm font-medium text-slate-900">{canonicalName}</p>
                           <p className="mt-1 text-xs text-slate-500">
                             {synonymsForCity.length > 0
                               ? `Альтернативных написаний: ${synonymsForCity.length}`
@@ -352,13 +401,13 @@ export function CitySynonymManager() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => mainId && handleGeocodeClick(mainId, city)} isLoading={isGeocoding === mainId} disabled={!mainId}>
+                          <Button variant="outline" size="sm" onClick={() => group.cityId && handleGeocodeClick(group.cityId, canonicalName)} isLoading={isGeocoding === group.cityId} disabled={!group.cityId}>
                             Координаты
                           </Button>
-                          <Button variant="outline" size="sm" onClick={(e) => mainId && handleEditClick(e, { id: mainId, name: city })} disabled={!mainId}>
+                          <Button variant="outline" size="sm" onClick={(e) => group.cityId && handleEditClick(e, { id: group.cityId, name: canonicalName })} disabled={!group.cityId}>
                             Редактировать
                           </Button>
-                          <Button variant="danger" size="sm" onClick={(e) => mainId && handleDeleteClick(e, { id: mainId, name: city })} disabled={!mainId}>
+                          <Button variant="danger" size="sm" onClick={(e) => group.cityId && handleDeleteClick(e, { id: group.cityId, name: canonicalName })} disabled={!group.cityId}>
                             Удалить
                           </Button>
                         </div>
@@ -377,7 +426,7 @@ export function CitySynonymManager() {
                                   type="button"
                                   onClick={() => handleDeleteSynonym(entry)}
                                   className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
-                                  disabled={!!deletingMap[entry.id] || isSubmitting}
+                                  disabled={!!deletingMap[entry.id.toString()] || isSubmitting}
                                   aria-label="Удалить синоним"
                                 >
                                   ×
@@ -389,7 +438,7 @@ export function CitySynonymManager() {
                           <p className="text-xs text-slate-500">Добавьте варианты написания, которые встречаются в отчетах.</p>
                         )}
 
-                        <AddSynonymForm city={city} onSynonymAdded={loadSynonyms} />
+                        <AddSynonymForm cityId={group.cityId} cityName={canonicalName} onSynonymAdded={loadSynonyms} />
                       </div>
                     </div>
                   )

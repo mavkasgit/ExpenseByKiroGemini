@@ -3,10 +3,17 @@
 import { useEffect, useState } from 'react'
 import { getCitySynonyms } from '@/lib/actions/synonyms'
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
-import type { CitySynonym } from '@/types'
+import type { CitySynonymWithCity } from '@/types'
+
+interface CitySynonymRecord {
+  id: number
+  cityId: string
+  cityName: string
+  synonym: string
+}
 
 export function useCitySynonyms() {
-  const [synonyms, setSynonyms] = useState<CitySynonym[]>([])
+  const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -20,8 +27,24 @@ export function useCitySynonyms() {
         }
 
         if (result.success && result.data) {
-          setSynonyms(result.data)
-          syncCitySynonyms(result.data.map(record => ({ city: record.city, synonym: record.synonym })))
+          const records = (result.data as CitySynonymWithCity[])
+            .map((record) => {
+              const cityId = record.city?.id ?? record.city_id
+              const cityName = record.city?.name ?? record.synonym
+              if (!cityId) {
+                return null
+              }
+              return {
+                id: Number(record.id),
+                cityId,
+                cityName,
+                synonym: record.synonym
+              } satisfies CitySynonymRecord
+            })
+            .filter((record): record is CitySynonymRecord => record !== null)
+
+          setSynonyms(records)
+          syncCitySynonyms(records.map(record => ({ city: record.cityName, synonym: record.synonym })))
         }
       } catch (error) {
         console.error('Failed to preload city synonyms', error)

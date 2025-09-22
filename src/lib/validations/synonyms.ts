@@ -11,12 +11,23 @@ export const deleteKeywordSynonymSchema = z.object({
 });
 
 export const citySynonymSchema = z.object({
-  city: z.string().min(2, 'Название города должно содержать минимум 2 символа').max(100, 'Название города слишком длинное'),
+  cityId: z.string().uuid('Некорректный идентификатор города').optional(),
+  city: z
+    .string()
+    .min(2, 'Название города должно содержать минимум 2 символа')
+    .max(100, 'Название города слишком длинное')
+    .optional(),
   synonym: z.string().min(2, 'Синоним должен содержать минимум 2 символа').max(100, 'Синоним слишком длинный')
+}).refine((data) => data.cityId || data.city, {
+  message: 'Укажите город или идентификатор города',
+  path: ['city']
 });
 
 export const deleteCitySynonymSchema = z.object({
-  id: z.string().uuid('Некорректный идентификатор записи синонима')
+  id: z.union([
+    z.number().int('Некорректный идентификатор записи синонима'),
+    z.string().regex(/^\d+$/, 'Некорректный идентификатор записи синонима')
+  ])
 });
 
 export const deleteCitySchema = z.object({

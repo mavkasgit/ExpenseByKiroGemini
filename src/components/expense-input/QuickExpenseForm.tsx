@@ -75,7 +75,7 @@ export function QuickExpenseForm({
           notes: formData.notes || undefined,
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
-          city: formData.city || undefined,
+          city_id: formData.city || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит
         }

@@ -498,6 +498,7 @@ export type Expense = Database['public']['Tables']['expenses']['Row']
 export type City = Database['public']['Tables']['cities']['Row']
 export type CityAlias = Database['public']['Tables']['city_aliases']['Row']
 export type CitySynonym = Database['public']['Tables']['city_synonyms']['Row']
+export type CitySynonymWithCity = CitySynonym & { city: Pick<City, 'id' | 'name'> | null }
 export type UnrecognizedCity = Database['public']['Tables']['unrecognized_cities']['Row']
 
 export type CategoryKeyword = Database['public']['Tables']['category_keywords']['Row']

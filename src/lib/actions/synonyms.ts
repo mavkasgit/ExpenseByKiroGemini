@@ -16,7 +16,9 @@ import {
   type DeleteCityData,
   type UpdateCityData
 } from '@/lib/validations/synonyms';
-import type { KeywordSynonym, CitySynonym } from '@/types';
+import type { KeywordSynonym, CitySynonym, City } from '@/types';
+
+type CitySynonymWithCity = CitySynonym & { city: Pick<City, 'id' | 'name'> | null };
 
 export async function createKeywordSynonym(data: CreateKeywordSynonymData) {
   const supabase = await createServerClient();
@@ -69,7 +71,7 @@ export async function deleteKeywordSynonym(data: DeleteKeywordSynonymData) {
     const { error } = await supabase
       .from('keyword_synonyms')
       .delete()
-      .eq('id', validated.id)
+      .eq('id', validated.id as any)
       .eq('user_id', user.id);
 
     if (error) {
@@ -96,17 +98,25 @@ export async function getCitySynonyms() {
 
     const { data, error } = await supabase
       .from('city_synonyms')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('city', { ascending: true })
-      .order('synonym', { ascending: true });
+      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name)')
+      .eq('user_id', user.id);
 
     if (error) {
       console.error('Ошибка загрузки синонимов городов:', error);
       return { error: 'Не удалось загрузить синонимы городов' };
     }
 
-    return { success: true, data: (data || []) as CitySynonym[] };
+    const records = (data || []) as CitySynonymWithCity[];
+    const sorted = records.sort((a, b) => {
+      const nameA = a.city?.name?.toLocaleLowerCase('ru') ?? '';
+      const nameB = b.city?.name?.toLocaleLowerCase('ru') ?? '';
+      if (nameA !== nameB) {
+        return nameA.localeCompare(nameB, 'ru');
+      }
+      return a.synonym.localeCompare(b.synonym, 'ru');
+    });
+
+    return { success: true, data: sorted };
   } catch (err) {
     console.error('Ошибка получения синонимов городов:', err);
     return { error: 'Произошла ошибка при загрузке синонимов городов' };
@@ -123,15 +133,75 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
     }
 
     const validated = citySynonymSchema.parse(data);
+    const trimmedSynonym = validated.synonym.trim();
+
+    let cityRecord: Pick<City, 'id' | 'name'> | null = null;
+    let cityId = validated.cityId ?? null;
+
+    if (cityId) {
+      const { data: existingCity, error: cityError } = await supabase
+        .from('cities')
+        .select('id, name')
+        .eq('id', cityId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (cityError || !existingCity) {
+        return { error: 'Город не найден' };
+      }
+
+      cityRecord = existingCity as Pick<City, 'id' | 'name'>;
+      cityId = cityRecord.id;
+    } else {
+      const cityName = validated.city?.trim();
+      if (!cityName) {
+        return { error: 'Укажите название города' };
+      }
+
+      const { data: existingCity } = await supabase
+        .from('cities')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('name', cityName)
+        .maybeSingle();
+
+      if (existingCity) {
+        return { error: 'Город с таким названием уже существует' };
+      }
+
+      const timestamp = new Date().toISOString();
+
+      const { data: newCity, error: createCityError } = await supabase
+        .from('cities')
+        .insert({
+          name: cityName,
+          user_id: user.id,
+          updated_at: timestamp
+        })
+        .select('id, name')
+        .single();
+
+      if (createCityError || !newCity) {
+        console.error('Ошибка создания города:', createCityError);
+        return { error: 'Не удалось создать город' };
+      }
+
+      cityRecord = newCity as Pick<City, 'id' | 'name'>;
+      cityId = cityRecord.id;
+    }
+
+    if (!cityId || !cityRecord) {
+      return { error: 'Не удалось определить город' };
+    }
 
     const { data: synonym, error } = await supabase
       .from('city_synonyms')
       .insert({
-        city: validated.city.trim(),
-        synonym: validated.synonym.trim(),
+        city_id: cityId,
+        synonym: trimmedSynonym,
         user_id: user.id
       })
-      .select()
+      .select('id, city_id, synonym, user_id, created_at')
       .single();
 
     if (error) {
@@ -143,7 +213,8 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
     }
 
     revalidatePath('/settings');
-    return { success: true, data: synonym as CitySynonym };
+    revalidatePath('/cities');
+    return { success: true, data: { ...(synonym as CitySynonym), city: cityRecord } as CitySynonymWithCity };
   } catch (err) {
     console.error('Ошибка добавления синонима города:', err);
     return { error: 'Произошла ошибка при создании синонима города' };
@@ -160,11 +231,16 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
     }
 
     const validated = deleteCitySynonymSchema.parse(data);
+    const recordId = typeof validated.id === 'string' ? Number(validated.id) : validated.id;
+
+    if (!Number.isInteger(recordId) || recordId <= 0) {
+      return { error: 'Некорректный идентификатор записи синонима' };
+    }
 
     const { error } = await supabase
       .from('city_synonyms')
       .delete()
-      .eq('id', validated.id)
+      .eq('id', recordId)
       .eq('user_id', user.id);
 
     if (error) {
@@ -173,6 +249,7 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
     }
 
     revalidatePath('/settings');
+    revalidatePath('/cities');
     return { success: true };
   } catch (err) {
     console.error('Ошибка удаления синонима города:', err);
@@ -192,8 +269,8 @@ export async function deleteCity(data: DeleteCityData) {
     const validated = deleteCitySchema.parse(data);
 
     const { data: existingCity, error: existingError } = await supabase
-      .from('city_synonyms')
-      .select('city')
+      .from('cities')
+      .select('id')
       .eq('id', validated.id)
       .eq('user_id', user.id)
       .single();
@@ -202,11 +279,22 @@ export async function deleteCity(data: DeleteCityData) {
       return { error: 'Город не найден' };
     }
 
-    const { error } = await supabase
+    const { error: deleteSynonymsError } = await supabase
       .from('city_synonyms')
       .delete()
       .eq('user_id', user.id)
-      .eq('city', existingCity.city);
+      .eq('city_id', validated.id);
+
+    if (deleteSynonymsError) {
+      console.error('Ошибка удаления синонимов города:', deleteSynonymsError);
+      return { error: 'Не удалось удалить синонимы города' };
+    }
+
+    const { error } = await supabase
+      .from('cities')
+      .delete()
+      .eq('id', validated.id)
+      .eq('user_id', user.id);
 
     if (error) {
       console.error('Ошибка удаления города:', error);
@@ -214,6 +302,7 @@ export async function deleteCity(data: DeleteCityData) {
     }
 
     revalidatePath('/settings');
+    revalidatePath('/cities');
     return { success: true };
   } catch (err) {
     console.error('Ошибка при удалении города:', err);
@@ -233,8 +322,8 @@ export async function updateCityName(data: UpdateCityData) {
     const validated = updateCitySchema.parse(data);
 
     const { data: existingCity, error: existingError } = await supabase
-      .from('city_synonyms')
-      .select('id, city, synonym')
+      .from('cities')
+      .select('id, name')
       .eq('id', validated.id)
       .eq('user_id', user.id)
       .single();
@@ -243,25 +332,39 @@ export async function updateCityName(data: UpdateCityData) {
       return { error: 'Город не найден' };
     }
 
-    const { error: updateCitiesError } = await supabase
-      .from('city_synonyms')
-      .update({ city: validated.newCityName })
-      .eq('user_id', user.id)
-      .eq('city', existingCity.city);
+    const newCityName = validated.newCityName.trim();
 
-    if (updateCitiesError) {
-      if (updateCitiesError.code === '23505') {
-        return { error: 'Город с таким названием уже существует' };
-      }
-      console.error('Ошибка обновления города:', updateCitiesError);
+    const { data: duplicateCity } = await supabase
+      .from('cities')
+      .select('id')
+      .eq('user_id', user.id)
+      .ilike('name', newCityName)
+      .neq('id', validated.id)
+      .maybeSingle();
+
+    if (duplicateCity) {
+      return { error: 'Город с таким названием уже существует' };
+    }
+
+    const timestamp = new Date().toISOString();
+
+    const { error: updateCityError } = await supabase
+      .from('cities')
+      .update({ name: newCityName, updated_at: timestamp })
+      .eq('id', validated.id)
+      .eq('user_id', user.id);
+
+    if (updateCityError) {
+      console.error('Ошибка обновления города:', updateCityError);
       return { error: 'Не удалось обновить город' };
     }
 
     const { error: updateCanonicalError } = await supabase
       .from('city_synonyms')
-      .update({ synonym: validated.newCityName })
+      .update({ synonym: newCityName })
+      .eq('city_id', validated.id)
       .eq('user_id', user.id)
-      .eq('id', validated.id);
+      .eq('synonym', existingCity.name);
 
     if (updateCanonicalError) {
       console.error('Ошибка обновления основного названия города:', updateCanonicalError);
@@ -269,6 +372,7 @@ export async function updateCityName(data: UpdateCityData) {
     }
 
     revalidatePath('/settings');
+    revalidatePath('/cities');
     return { success: true };
   } catch (err) {
     console.error('Ошибка изменения города:', err);

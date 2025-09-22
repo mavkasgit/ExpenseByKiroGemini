@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useToast } from '@/hooks/useToast'
-import { Category, CategoryGroup, CategoryKeywordWithSynonyms } from '@/types'
+import { Category, CategoryGroup, CategoryKeywordWithSynonyms, KeywordSynonym } from '@/types'
 import { moveCategoryToGroup, updateGroupOrder, updateCategoryOrderInGroup } from '@/lib/actions/categories'
 import { getAllKeywords } from '@/lib/actions/keywords'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
@@ -33,6 +33,18 @@ export type CategoryGroupWithCategories = CategoryGroup & {
   categories: Category[];
 };
 
+const normalizeKeywords = (
+  keywords: any[] = [],
+): CategoryKeywordWithSynonyms[] =>
+  keywords.map((keyword) => ({
+    ...keyword,
+    keyword_synonyms: (keyword.keyword_synonyms || []).map((synonym: Partial<KeywordSynonym>) => ({
+      ...synonym,
+      keyword_id: (synonym as KeywordSynonym).keyword_id ?? keyword.id ?? null,
+      user_id: (synonym as KeywordSynonym).user_id ?? keyword.user_id ?? null,
+    })),
+  })) as CategoryKeywordWithSynonyms[];
+
 const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Category[]) : CategoryGroupWithCategories[] => {
   const categorizedGroups = allGroups.map(group => ({
     ...group,
@@ -50,7 +62,6 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
     user_id: null,
     created_at: null,
     updated_at: null,
-    description: null,
   };
 
   let finalGroups = [...categorizedGroups];
@@ -96,7 +107,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
       ]);
       
       if (keywordsResult.success) {
-        setAllKeywords(keywordsResult.data || []);
+        setAllKeywords(normalizeKeywords(keywordsResult.data || []));
       }
       if (settingsResult.settings) {
         setUserSettings(settingsResult.settings);
@@ -263,7 +274,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   const handleKeywordChange = async () => {
     const result = await getAllKeywords();
     if (result.success) {
-      setAllKeywords(result.data || []);
+      setAllKeywords(normalizeKeywords(result.data || []));
     }
   };
 
