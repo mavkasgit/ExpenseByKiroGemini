@@ -18,35 +18,30 @@ export default function CitiesPage() {
         title="Города и синонимы"
         description="Управляйте городами и анализируйте географию ваших расходов."
       />
-      <main className="container mx-auto grid grid-cols-1 gap-6 px-4 pb-12 pt-6 lg:grid-cols-2">
-        {/* Левая колонка - Карта */}
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle>Карта расходов</CardTitle>
-              <CardDescription>
-                Визуализация городов, в которых вы совершали траты.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px] w-full overflow-hidden rounded-lg border">
-                {yandexApiKey ? (
-                  <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
-                    <Map state={mapState} width="100%" height="100%" />
-                  </YMaps>
-                ) : (
-                  <div className="flex h-full items-center justify-center bg-red-50 text-red-700">
-                    Ошибка: API-ключ для Яндекс Карт не настроен.
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        {/* Правая колонка - Менеджер синонимов */}
-        <div className="lg:col-span-1">
-          <CitySynonymManager />
-        </div>
+      <main className="container mx-auto grid gap-6 px-4 pb-12 pt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Карта расходов</CardTitle>
+            <CardDescription>
+              Визуализация городов, в которых вы совершали траты.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[400px] w-full overflow-hidden rounded-lg border">
+              {yandexApiKey ? (
+                <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
+                  <Map state={mapState} width="100%" height="100%" />
+                </YMaps>
+              ) : (
+                <div className="flex h-full items-center justify-center bg-red-50 text-red-700">
+                  Ошибка: API-ключ для Яндекс Карт не настроен.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <CitySynonymManager />
       </main>
     </div>
   );
