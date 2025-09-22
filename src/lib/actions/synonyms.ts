@@ -190,7 +190,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
   }
 }
 
-export async function deleteCitySynonym(data: DeleteCitySynonymData) {
+export async function updateCityName(data: UpdateCityData) {
   const supabase = await createServerClient()
 
   try {
@@ -199,24 +199,51 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
       return { error: 'Пользователь не авторизован' }
     }
 
-    const validated = deleteCitySynonymSchema.parse(data)
+    const validated = updateCitySchema.parse(data)
 
-    const { error } = await supabase
+    const { data: existingCity, error: existingError } = await supabase
       .from('city_synonyms')
-      .delete()
+      .select('id, city, synonym')
       .eq('id', validated.id)
       .eq('user_id', user.id)
+      .single()
 
-    if (error) {
-      console.error('Ошибка удаления синонима города:', error)
-      return { error: 'Не удалось удалить синоним города' }
+    if (existingError || !existingCity) {
+      return { error: 'Город не найден' }
+    }
+
+    const newCityName = validated.city.trim()
+
+    const { error: updateCitiesError } = await supabase
+      .from('city_synonyms')
+      .update({ city: newCityName })
+      .eq('user_id', user.id)
+      .eq('city', existingCity.city)
+
+    if (updateCitiesError) {
+      if (updateCitiesError.code === '23505') {
+        return { error: 'Город с таким названием уже существует' }
+      }
+      console.error('Ошибка обновления города:', updateCitiesError)
+      return { error: 'Не удалось обновить город' }
+    }
+
+    const { error: updateCanonicalError } = await supabase
+      .from('city_synonyms')
+      .update({ synonym: newCityName })
+      .eq('user_id', user.id)
+      .eq('id', validated.id)
+
+    if (updateCanonicalError) {
+      console.error('Ошибка обновления основного названия города:', updateCanonicalError)
+      return { error: 'Не удалось обновить основной вариант города' }
     }
 
     revalidatePath('/settings')
     return { success: true }
   } catch (err) {
-    console.error('Ошибка удаления синонима города:', err)
-    return { error: 'Произошла ошибка при удалении синонима города' }
+    console.error('Ошибка изменения города:', err)
+    return { error: 'Произошла ошибка при обновлении города' }
   }
 }
 
@@ -231,11 +258,22 @@ export async function deleteCity(data: DeleteCityData) {
 
     const validated = deleteCitySchema.parse(data)
 
+    const { data: existingCity, error: existingError } = await supabase
+      .from('city_synonyms')
+      .select('city')
+      .eq('id', validated.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (existingError || !existingCity) {
+      return { error: 'Город не найден' }
+    }
+
     const { error } = await supabase
       .from('city_synonyms')
       .delete()
-      .eq('city', validated.city)
       .eq('user_id', user.id)
+      .eq('city', existingCity.city)
 
     if (error) {
       console.error('Ошибка удаления города:', error)
@@ -245,50 +283,7 @@ export async function deleteCity(data: DeleteCityData) {
     revalidatePath('/settings')
     return { success: true }
   } catch (err) {
-    console.error('Ошибка удаления города:', err)
+    console.error('Ошибка при удалении города:', err)
     return { error: 'Произошла ошибка при удалении города' }
   }
 }
-
-export async function updateCity(data: UpdateCityData) {
-  const supabase = await createServerClient()
-
-  try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return { error: 'Пользователь не авторизован' }
-    }
-
-    const validated = updateCitySchema.parse(data)
-
-    const { error: updateSynonymError } = await supabase
-      .from('city_synonyms')
-      .update({ synonym: validated.newCityName })
-      .eq('city', validated.oldCityName)
-      .eq('synonym', validated.oldCityName)
-      .eq('user_id', user.id)
-
-    if (updateSynonymError) {
-      console.error('Ошибка обновления синонима города, совпадающего с названием:', updateSynonymError)
-      return { error: 'Не удалось обновить основной синоним города' }
-    }
-
-    const { error } = await supabase
-      .from('city_synonyms')
-      .update({ city: validated.newCityName })
-      .eq('city', validated.oldCityName)
-      .eq('user_id', user.id)
-
-    if (error) {
-      console.error('Ошибка обновления города:', error)
-      return { error: 'Не удалось обновить город' }
-    }
-
-    revalidatePath('/settings')
-    return { success: true }
-  } catch (err) {
-    console.error('Ошибка обновления города:', err)
-    return { error: 'Произошла ошибка при обновлении города' }
-  }
-}
-

@@ -8,6 +8,7 @@ import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
 import { CityMap } from './CityMap'
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 
 interface SynonymFormState {
   city: string
@@ -98,7 +99,7 @@ export function CitySynonymManager() {
   }, [groupedSynonyms, synonyms])
 
   const citySummary: CitySummary[] = useMemo(() => {
-    return filteredGroupedSynonyms.map(([city, entries]) => {
+    return groupedSynonyms.map(([city, entries]) => {
       const alternate = entries.filter(entry => entry.synonym !== city).length
       return {
         name: city,
@@ -138,7 +139,7 @@ export function CitySynonymManager() {
     }
   }
 
-  const handleDelete = async (synonym: CitySynonym) => {
+  const handleDeleteSynonym = async (synonym: CitySynonym) => {
     setDeletingMap(prev => ({ ...prev, [synonym.id]: true }))
     try {
       const result = await deleteCitySynonym({ id: synonym.id })
@@ -318,6 +319,35 @@ export function CitySynonymManager() {
                       </div>
 
                       <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+                        {isEditing && cityId && (
+                          <form
+                            onSubmit={(event) => handleSubmitCityEdit(event, cityId, city)}
+                            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                          >
+                            <Input
+                              value={editingCityName}
+                              onChange={(event) => setEditingCityName(event.target.value)}
+                              disabled={isCityUpdating}
+                              className="h-10 flex-1 text-sm"
+                              placeholder="Введите новое название"
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button type="submit" size="sm" isLoading={isCityUpdating}>
+                                Сохранить
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleCancelEditCity}
+                                disabled={isCityUpdating}
+                              >
+                                Отмена
+                              </Button>
+                            </div>
+                          </form>
+                        )}
+
                         {synonymsForCity.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {synonymsForCity.map(entry => (
@@ -328,7 +358,7 @@ export function CitySynonymManager() {
                                 {entry.synonym}
                                 <button
                                   type="button"
-                                  onClick={() => handleDelete(entry)}
+                                  onClick={() => handleDeleteSynonym(entry)}
                                   className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
                                   disabled={!!deletingMap[entry.id] || isSubmitting}
                                   aria-label="Удалить синоним"
