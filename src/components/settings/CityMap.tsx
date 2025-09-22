@@ -12,10 +12,11 @@ const HEIGHT = 420
 const RUSSIA_ID = 643
 
 interface CityMapProps {
-  cities: { name: string; total: number; alternate: number }[]
+  cities: { id: string; name: string; total: number; alternate: number; coordinates: { lat: number; lon: number } | null }[]
 }
 
 interface Marker {
+  id: string
   name: string
   total: number
   alternate: number
@@ -112,7 +113,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
 
     return cities.map(city => {
       const key = normaliseName(city.name)
-      const coordinate = coordinateLookup.get(key)
+      const coordinate = city.coordinates ?? coordinateLookup.get(key) ?? null
       let position: [number, number] | null = null
       let hasCoordinates = false
 
@@ -120,7 +121,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
         const projected = projection([coordinate.lon, coordinate.lat])
         if (projected) {
           position = projected as [number, number]
-          hasCoordinates = true
+          hasCoordinates = city.coordinates != null || coordinateLookup.has(key)
         }
       }
 
@@ -137,6 +138,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
       const radius = Math.min(6 + city.alternate * 2, 14)
 
       return {
+        id: city.id,
         name: city.name,
         total: city.total,
         alternate: city.alternate,
@@ -171,7 +173,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
 
           return (
             <div
-              key={marker.name}
+              key={marker.id}
               className="group absolute -translate-x-1/2 -translate-y-1/2 transform"
               style={{ left, top }}
               aria-label={label}
