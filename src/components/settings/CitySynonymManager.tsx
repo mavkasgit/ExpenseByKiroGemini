@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Button, Input, Modal, ConfirmationModal } from '@/components/ui'
 import { useToast } from '@/hooks/useToast'
-import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCity } from '@/lib/actions/synonyms'
+import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCityName } from '@/lib/actions/synonyms'
+import { updateCityCoordinates } from '@/lib/actions/cities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
@@ -27,9 +28,10 @@ export function CitySynonymManager() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState('')
-  const [cityToDelete, setCityToDelete] = useState<string | null>(null)
-  const [cityToEdit, setCityToEdit] = useState<string | null>(null)
+  const [cityToDelete, setCityToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [cityToEdit, setCityToEdit] = useState<{ id: string; name: string } | null>(null)
   const [newCityName, setNewCityName] = useState('')
+  const [isGeocoding, setIsGeocoding] = useState<string | null>(null);
   const { showToast } = useToast()
 
   const loadSynonyms = useCallback(async () => {
@@ -55,13 +57,17 @@ export function CitySynonymManager() {
   }, [loadSynonyms])
 
   const groupedSynonyms = useMemo(() => {
-    const map = new Map<string, CitySynonym[]>()
+    const map = new Map<string, { mainId: string | null, entries: CitySynonym[] }>()
     synonyms.forEach(record => {
       const cityKey = record.city.trim() || 'Без города'
       if (!map.has(cityKey)) {
-        map.set(cityKey, [])
+        map.set(cityKey, { mainId: null, entries: [] })
       }
-      map.get(cityKey)!.push(record)
+      const group = map.get(cityKey)!
+      group.entries.push(record)
+      if (record.synonym === record.city) {
+        group.mainId = record.id
+      }
     })
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ru'))
   }, [synonyms])
@@ -72,18 +78,18 @@ export function CitySynonymManager() {
       return groupedSynonyms
     }
 
-    return groupedSynonyms.filter(([city, entries]) => {
+    return groupedSynonyms.filter(([city, group]) => {
       if (city.toLowerCase().includes(term)) {
         return true
       }
-      return entries.some(entry => entry.synonym.toLowerCase().includes(term))
+      return group.entries.some(entry => entry.synonym.toLowerCase().includes(term))
     })
   }, [groupedSynonyms, searchTerm])
 
   const stats = useMemo(() => {
     const totalCities = groupedSynonyms.length
-    const citiesWithCustomSynonyms = groupedSynonyms.filter(([, entries]) =>
-      entries.some(entry => entry.synonym.trim() && entry.synonym !== entry.city)
+    const citiesWithCustomSynonyms = groupedSynonyms.filter(([, group]) =>
+      group.entries.some(entry => entry.synonym.trim() && entry.synonym !== entry.city)
     ).length
     const totalSynonyms = synonyms.length
     const customSynonyms = synonyms.filter(entry => entry.synonym !== entry.city).length
@@ -98,11 +104,11 @@ export function CitySynonymManager() {
   }, [groupedSynonyms, synonyms])
 
   const citySummary: CitySummary[] = useMemo(() => {
-    return filteredGroupedSynonyms.map(([city, entries]) => {
-      const alternate = entries.filter(entry => entry.synonym !== city).length
+    return filteredGroupedSynonyms.map(([city, group]) => {
+      const alternate = group.entries.filter(entry => entry.synonym !== city).length
       return {
         name: city,
-        total: entries.length,
+        total: group.entries.length,
         alternate
       }
     })
@@ -138,7 +144,7 @@ export function CitySynonymManager() {
     }
   }
 
-  const handleDelete = async (synonym: CitySynonym) => {
+  const handleDeleteSynonym = async (synonym: CitySynonym) => {
     setDeletingMap(prev => ({ ...prev, [synonym.id]: true }))
     try {
       const result = await deleteCitySynonym({ id: synonym.id })
@@ -160,7 +166,7 @@ export function CitySynonymManager() {
     }
   }
 
-  const handleDeleteClick = (e: React.MouseEvent, city: string) => {
+  const handleDeleteClick = (e: React.MouseEvent, city: { id: string; name: string }) => {
     e.stopPropagation();
     setCityToDelete(city);
   };
@@ -170,12 +176,12 @@ export function CitySynonymManager() {
 
     setIsSubmitting(true);
     try {
-      const result = await deleteCity({ city: cityToDelete });
+      const result = await deleteCity({ id: cityToDelete.id });
       if (result.error) {
         showToast(result.error, 'error');
       } else {
         setSynonyms(prev => {
-          const updated = prev.filter(s => s.city !== cityToDelete);
+          const updated = prev.filter(s => s.city !== cityToDelete.name);
           syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })));
           return updated;
         });
@@ -190,28 +196,28 @@ export function CitySynonymManager() {
     }
   };
 
-  const handleEditClick = (e: React.MouseEvent, city: string) => {
+  const handleEditClick = (e: React.MouseEvent, city: { id: string; name: string }) => {
     e.stopPropagation();
     setCityToEdit(city);
-    setNewCityName(city);
+    setNewCityName(city.name);
   };
 
   const handleConfirmEdit = async () => {
-    if (!cityToEdit || !newCityName.trim() || cityToEdit === newCityName.trim()) {
+    if (!cityToEdit || !newCityName.trim() || cityToEdit.name === newCityName.trim()) {
       setCityToEdit(null);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await updateCity({ oldCityName: cityToEdit, newCityName: newCityName.trim() });
+      const result = await updateCityName({ id: cityToEdit.id, newCityName: newCityName.trim() });
       if (result.error) {
         showToast(result.error, 'error');
       } else {
         setSynonyms(prev => {
           const updated = prev.map(s => 
-            s.city === cityToEdit 
-              ? { ...s, city: newCityName.trim(), synonym: s.synonym === cityToEdit ? newCityName.trim() : s.synonym } 
+            s.city === cityToEdit.name 
+              ? { ...s, city: newCityName.trim(), synonym: s.synonym === cityToEdit.name ? newCityName.trim() : s.synonym } 
               : s
           );
           syncCitySynonyms(updated.map(record => ({ city: record.city, synonym: record.synonym })));
@@ -226,6 +232,43 @@ export function CitySynonymManager() {
       setIsSubmitting(false);
       setCityToEdit(null);
       setNewCityName('');
+    }
+  };
+
+  const handleGeocodeClick = async (cityId: string, cityName: string) => {
+    setIsGeocoding(cityId);
+    const YANDEX_API_KEY = process.env.NEXT_PUBLIC_YANDEX_GEOCODER_API_KEY;
+    if (!YANDEX_API_KEY) {
+      showToast('Не найден ключ API для Яндекс.Карт', 'error');
+      setIsGeocoding(null);
+      return;
+    }
+
+    const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${YANDEX_API_KEY}&format=json&geocode=${encodeURIComponent(cityName)}`;
+
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      const featureMember = data.response.GeoObjectCollection.featureMember;
+      if (featureMember.length > 0) {
+        const point = featureMember[0].GeoObject.Point.pos;
+        const [lon, lat] = point.split(' ').map(Number);
+        
+        const result = await updateCityCoordinates({ id: cityId, coordinates: { lat, lon } });
+        if (result.error) {
+          showToast(result.error, 'error');
+        } else {
+          showToast('Координаты успешно обновлены', 'success');
+          loadSynonyms(); // Reload data to show new coordinates if displayed
+        }
+      } else {
+        showToast('Не удалось найти координаты для этого города', 'error');
+      }
+    } catch (error) {
+      console.error(`Error geocoding city "${cityName}":`, error);
+      showToast('Ошибка при поиске координат', 'error');
+    } finally {
+      setIsGeocoding(null);
     }
   };
 
@@ -291,8 +334,9 @@ export function CitySynonymManager() {
                   Ничего не найдено. Проверьте запрос или добавьте новый город.
                 </div>
               ) : (
-                filteredGroupedSynonyms.map(([city, entries]) => {
-                  const synonymsForCity = entries.filter(entry => entry.synonym !== city)
+                filteredGroupedSynonyms.map(([city, group]) => {
+                  const synonymsForCity = group.entries.filter(entry => entry.synonym !== city)
+                  const mainId = group.mainId;
 
                   return (
                     <div key={city} className="rounded-lg border border-slate-200 bg-white">
@@ -308,10 +352,13 @@ export function CitySynonymManager() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={(e) => handleEditClick(e, city)}>
+                          <Button variant="outline" size="sm" onClick={() => mainId && handleGeocodeClick(mainId, city)} isLoading={isGeocoding === mainId} disabled={!mainId}>
+                            Координаты
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={(e) => mainId && handleEditClick(e, { id: mainId, name: city })} disabled={!mainId}>
                             Редактировать
                           </Button>
-                          <Button variant="danger" size="sm" onClick={(e) => handleDeleteClick(e, city)}>
+                          <Button variant="danger" size="sm" onClick={(e) => mainId && handleDeleteClick(e, { id: mainId, name: city })} disabled={!mainId}>
                             Удалить
                           </Button>
                         </div>
@@ -328,7 +375,7 @@ export function CitySynonymManager() {
                                 {entry.synonym}
                                 <button
                                   type="button"
-                                  onClick={() => handleDelete(entry)}
+                                  onClick={() => handleDeleteSynonym(entry)}
                                   className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
                                   disabled={!!deletingMap[entry.id] || isSubmitting}
                                   aria-label="Удалить синоним"
@@ -392,12 +439,12 @@ export function CitySynonymManager() {
         isOpen={!!cityToDelete}
         onClose={() => setCityToDelete(null)}
         onConfirm={handleConfirmDelete}
-        title={`Удалить город ${cityToDelete}?`}
+        title={`Удалить город ${cityToDelete?.name}?`}
         message="Это действие приведет к удалению города и всех связанных с ним синонимов. Отменить это действие будет невозможно."
         confirmText="Удалить"
         isLoading={isSubmitting}
       />
-      <Modal isOpen={!!cityToEdit} onClose={() => setCityToEdit(null)} title={`Редактировать город ${cityToEdit}`}>
+      <Modal isOpen={!!cityToEdit} onClose={() => setCityToEdit(null)} title={`Редактировать город ${cityToEdit?.name}`}>
         <div className="space-y-4 p-6">
           <Input
             value={newCityName}
