@@ -37,6 +37,8 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const isAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_AUTH === 'true'
+
   const protectedPrefixes = [
     '/dashboard',
     '/expenses',
@@ -47,7 +49,10 @@ export async function middleware(request: NextRequest) {
   ]
 
   // Защищаем приватные страницы
-  if (protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))) {
+  if (
+    isAuthEnabled &&
+    protectedPrefixes.some(prefix => request.nextUrl.pathname.startsWith(prefix))
+  ) {
     if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
@@ -56,8 +61,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect authenticated users away from auth pages
-  if ((request.nextUrl.pathname.startsWith('/login') || 
-       request.nextUrl.pathname.startsWith('/signup')) && user) {
+  if (
+    isAuthEnabled &&
+    (request.nextUrl.pathname.startsWith('/login') ||
+      request.nextUrl.pathname.startsWith('/signup')) &&
+    user
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
