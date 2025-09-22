@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import clsx from 'clsx'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Button, Input, Modal, ConfirmationModal } from '@/components/ui'
 import { useToast } from '@/hooks/useToast'
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCity } from '@/lib/actions/synonyms'
@@ -8,6 +9,8 @@ import { syncCitySynonyms } from '@/lib/utils/cityParser'
 import type { CitySynonym } from '@/types'
 import { AddSynonymForm } from './AddSynonymForm'
 import { CityMap } from './CityMap'
+import { CityPreviewImage } from './CityPreviewImage'
+import { normaliseCityName } from './cityGeo'
 
 interface SynonymFormState {
   city: string
@@ -30,7 +33,9 @@ export function CitySynonymManager() {
   const [cityToDelete, setCityToDelete] = useState<string | null>(null)
   const [cityToEdit, setCityToEdit] = useState<string | null>(null)
   const [newCityName, setNewCityName] = useState('')
+  const [selectedCity, setSelectedCity] = useState<string | null>(null)
   const { showToast } = useToast()
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const loadSynonyms = useCallback(async () => {
     setIsLoading(true)
@@ -107,6 +112,35 @@ export function CitySynonymManager() {
       }
     })
   }, [filteredGroupedSynonyms])
+
+  useEffect(() => {
+    if (citySummary.length === 0) {
+      setSelectedCity(null)
+      return
+    }
+
+    setSelectedCity(prev => {
+      if (
+        prev &&
+        citySummary.some(entry => normaliseCityName(entry.name) === normaliseCityName(prev))
+      ) {
+        return prev
+      }
+      return citySummary[0].name
+    })
+  }, [citySummary])
+
+  useEffect(() => {
+    if (!selectedCity) {
+      return
+    }
+
+    const key = normaliseCityName(selectedCity)
+    const target = cardRefs.current[key]
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' })
+    }
+  }, [selectedCity])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -229,6 +263,13 @@ export function CitySynonymManager() {
     }
   };
 
+  const handleCitySelect = (city: string) => {
+    const matched = citySummary.find(
+      entry => normaliseCityName(entry.name) === normaliseCityName(city)
+    )
+    setSelectedCity(matched ? matched.name : city)
+  }
+
   return (
     <>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
@@ -293,9 +334,27 @@ export function CitySynonymManager() {
               ) : (
                 filteredGroupedSynonyms.map(([city, entries]) => {
                   const synonymsForCity = entries.filter(entry => entry.synonym !== city)
+                  const cardKey = normaliseCityName(city)
+                  const isSelected = selectedCity
+                    ? normaliseCityName(selectedCity) === cardKey
+                    : false
 
                   return (
-                    <div key={city} className="rounded-lg border border-slate-200 bg-white">
+                    <div
+                      key={city}
+                      ref={(element) => {
+                        if (element) {
+                          cardRefs.current[cardKey] = element
+                        } else {
+                          delete cardRefs.current[cardKey]
+                        }
+                      }}
+                      onClick={() => handleCitySelect(city)}
+                      className={clsx(
+                        'rounded-lg border border-slate-200 bg-white transition hover:border-blue-200 hover:shadow-sm',
+                        isSelected && 'border-blue-400 ring-2 ring-blue-500 ring-offset-1'
+                      )}
+                    >
                       <div
                         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                       >
@@ -318,6 +377,7 @@ export function CitySynonymManager() {
                       </div>
 
                       <div className="space-y-3 border-t border-slate-200 px-4 py-4">
+                        <CityPreviewImage city={city} />
                         {synonymsForCity.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {synonymsForCity.map(entry => (
@@ -328,7 +388,10 @@ export function CitySynonymManager() {
                                 {entry.synonym}
                                 <button
                                   type="button"
-                                  onClick={() => handleDelete(entry)}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleDelete(entry)
+                                  }}
                                   className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
                                   disabled={!!deletingMap[entry.id] || isSubmitting}
                                   aria-label="Удалить синоним"
@@ -359,7 +422,7 @@ export function CitySynonymManager() {
               <CardDescription>Выберите город на схеме, чтобы открыть его карточку в списке.</CardDescription>
             </CardHeader>
             <CardContent>
-              <CityMap cities={citySummary} />
+              <CityMap cities={citySummary} activeCity={selectedCity} onSelectCity={handleCitySelect} />
             </CardContent>
           </Card>
 
