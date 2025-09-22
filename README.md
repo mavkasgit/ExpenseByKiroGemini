@@ -72,6 +72,12 @@ expense-tracker/
 
 This project follows a spec-driven development approach. See the `.kiro/specs/expense-tracker/` directory for detailed requirements, design, and implementation tasks.
 
+### Temporarily disabling authentication
+
+The Edge middleware checks the Supabase session before allowing access to protected routes. To speed up development without going
+through the login flow, set the `NEXT_PUBLIC_ENABLE_AUTH` environment variable to `true` only when authentication should be
+enforced. When the variable is omitted (the default) the middleware will allow direct access to every page.
+
 ## License
 
 This project is private and not licensed for public use.
