@@ -12,6 +12,8 @@ import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
 import { useToast } from '@/hooks/useToast'
 import type { Category, ExpenseWithCategory } from '@/types'
 import Link from 'next/link'
+import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
+import { normaliseMarkerPreset, parseCityCoordinates } from '@/lib/utils/cityCoordinates'
 
 interface ExpensesPageContentProps {
   initialExpenses: ExpenseWithCategory[]
@@ -133,8 +135,13 @@ export function ExpensesPageContent({
 
       {/* Список расходов */}
       <div className="space-y-2">
-        {filteredExpenses.map((expense) => (
-          <Card key={expense.id} className="p-3">
+        {filteredExpenses.map((expense) => {
+          const cityCoordinates = expense.city ? parseCityCoordinates(expense.city.coordinates ?? null) : null
+          const markerPreset = cityCoordinates ? normaliseMarkerPreset(cityCoordinates.markerPreset) : undefined
+          const cityLabel = expense.city?.name ?? expense.raw_city_input ?? null
+
+          return (
+            <Card key={expense.id} className="p-3">
             <div className="flex items-center gap-3 min-w-0">
               {/* Сумма */}
               <div className="text-lg font-semibold text-gray-900 flex-shrink-0">
@@ -173,8 +180,18 @@ export function ExpensesPageContent({
                 ) : null}
               </div>
 
+              {/* Город */}
+              <div className="flex-shrink-0">
+                {cityLabel && (
+                  <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                    <CityMarkerIcon preset={markerPreset} active={Boolean(cityCoordinates)} />
+                    <span className="max-w-[140px] truncate">{cityLabel}</span>
+                  </div>
+                )}
+              </div>
+
               {/* Примечание - редактируемое поле */}
-              <InlineNotesEditor 
+              <InlineNotesEditor
                 expense={expense}
                 onUpdate={handleExpenseUpdate}
               />
@@ -208,8 +225,9 @@ export function ExpensesPageContent({
                 {expense.description}
               </div>
             )}
-          </Card>
-        ))}
+            </Card>
+          )
+        })}
         
         {filteredExpenses.length === 0 && hideUncategorized && (
           <Card className="p-8 text-center">

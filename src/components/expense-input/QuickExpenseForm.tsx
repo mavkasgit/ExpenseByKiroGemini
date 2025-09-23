@@ -1,6 +1,14 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import {
+  useState,
+  useTransition,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+  type KeyboardEvent as ReactKeyboardEvent
+} from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
@@ -11,6 +19,10 @@ import { getCurrentDateISO, getCurrentTimeHHMM } from '@/lib/utils/dateUtils'
 import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
+import { useCitySynonyms } from '@/hooks/useCitySynonyms'
+import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
+import { normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
+import { cn } from '@/lib/utils'
 
 interface QuickExpenseFormProps {
   onSuccess?: (expense: any) => void
@@ -24,6 +36,8 @@ export function QuickExpenseForm({
   const [isPending, startTransition] = useTransition()
   const { showToast } = useToast()
   const amountInputRef = useRef<HTMLInputElement>(null)
+  const cityInputRef = useRef<HTMLInputElement>(null)
+  const cityDropdownTimeoutRef = useRef<number | null>(null)
 
   const [formData, setFormData] = useState({
     amount: 0,
@@ -31,11 +45,125 @@ export function QuickExpenseForm({
     notes: '',
     expense_date: getCurrentDateISO(),
     expense_time: getCurrentTimeHHMM(),
-    city: '',
+    cityId: '',
+    cityInput: '',
     input_method: 'single' as const
   })
 
-  const [userSettings, setUserSettings] = useState<UserSettings>({});
+  const [userSettings, setUserSettings] = useState<UserSettings>({})
+  const { synonyms: citySynonyms } = useCitySynonyms()
+
+  type CityOption = {
+    cityId: string
+    cityName: string
+    markerPreset: string | null
+    hasCoordinates: boolean
+    synonyms: string[]
+  }
+
+  const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(() => {
+    const byId = new Map<string, CityOption>()
+    const bySynonym = new Map<string, CityOption>()
+    const synonymsRegistry = new Map<string, Set<string>>()
+
+    citySynonyms.forEach((record) => {
+      const existing = byId.get(record.cityId)
+
+      const synonymsSet = (() => {
+        let set = synonymsRegistry.get(record.cityId)
+        if (!set) {
+          set = new Set<string>()
+          synonymsRegistry.set(record.cityId, set)
+        }
+        return set
+      })()
+
+      const baseOption: CityOption = existing ?? {
+        cityId: record.cityId,
+        cityName: record.cityName,
+        markerPreset: record.markerPreset,
+        hasCoordinates: record.hasCoordinates,
+        synonyms: [record.cityName]
+      }
+
+      if (!existing) {
+        byId.set(record.cityId, baseOption)
+        synonymsSet.add(record.cityName.trim().toLowerCase())
+      }
+
+      if (record.markerPreset && !baseOption.markerPreset) {
+        baseOption.markerPreset = record.markerPreset
+      }
+
+      if (record.hasCoordinates) {
+        baseOption.hasCoordinates = true
+      }
+
+      const synonymNormalized = record.synonym.trim().toLowerCase()
+      if (!synonymsSet.has(synonymNormalized)) {
+        baseOption.synonyms.push(record.synonym)
+        synonymsSet.add(synonymNormalized)
+      }
+
+      bySynonym.set(synonymNormalized, baseOption)
+      bySynonym.set(record.cityName.trim().toLowerCase(), baseOption)
+    })
+
+    const options = Array.from(byId.values()).sort((a, b) =>
+      a.cityName.localeCompare(b.cityName, 'ru')
+    )
+
+    return {
+      cityOptions: options,
+      cityLookupBySynonym: bySynonym,
+      cityLookupById: new Map(options.map((option) => [option.cityId, option] as const))
+    }
+  }, [citySynonyms])
+
+  const resolveCityByInput = useCallback((value: string): CityOption | null => {
+    const normalized = value.trim().toLowerCase()
+    if (!normalized) {
+      return null
+    }
+    return cityLookupBySynonym.get(normalized) ?? null
+  }, [cityLookupBySynonym])
+
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false)
+  const [highlightedCityIndex, setHighlightedCityIndex] = useState(0)
+
+  const resolvedCity = useMemo(() => {
+    if (formData.cityId) {
+      return cityLookupById.get(formData.cityId) ?? null
+    }
+    if (formData.cityInput) {
+      return resolveCityByInput(formData.cityInput)
+    }
+    return null
+  }, [cityLookupById, formData.cityId, formData.cityInput, resolveCityByInput])
+
+  const filteredCityOptions = useMemo(() => {
+    const query = formData.cityInput.trim().toLowerCase()
+    const base = query
+      ? cityOptions.filter((option) =>
+          option.cityName.toLowerCase().includes(query) ||
+          option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
+        )
+      : cityOptions
+
+    return base.slice(0, 6)
+  }, [cityOptions, formData.cityInput])
+
+  const resolvedMarkerPreset = resolvedCity ? normaliseMarkerPreset(resolvedCity.markerPreset) : undefined
+
+  useEffect(() => {
+    setHighlightedCityIndex(0)
+  }, [filteredCityOptions])
+
+  useEffect(() => () => {
+    if (cityDropdownTimeoutRef.current) {
+      window.clearTimeout(cityDropdownTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -50,6 +178,90 @@ export function QuickExpenseForm({
   // Обработка изменения описания
   const handleDescriptionChange = (value: string) => {
     setFormData(prev => ({ ...prev, description: value }))
+  }
+
+  const handleCityInputChange = (value: string) => {
+    const match = resolveCityByInput(value)
+    setFormData(prev => ({
+      ...prev,
+      cityInput: value,
+      cityId: match?.cityId ?? ''
+    }))
+    setIsCityDropdownOpen(Boolean(value))
+    setHighlightedCityIndex(0)
+  }
+
+  const handleCitySelect = (option: CityOption) => {
+    setFormData(prev => ({
+      ...prev,
+      cityInput: option.cityName,
+      cityId: option.cityId
+    }))
+    setIsCityDropdownOpen(false)
+    if (cityInputRef.current) {
+      cityInputRef.current.blur()
+    }
+  }
+
+  const handleCityInputFocus = () => {
+    if (cityDropdownTimeoutRef.current) {
+      window.clearTimeout(cityDropdownTimeoutRef.current)
+      cityDropdownTimeoutRef.current = null
+    }
+    if (filteredCityOptions.length > 0) {
+      setIsCityDropdownOpen(true)
+    }
+  }
+
+  const handleCityInputBlur = () => {
+    cityDropdownTimeoutRef.current = window.setTimeout(() => {
+      setIsCityDropdownOpen(false)
+    }, 120)
+  }
+
+  const handleCityKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (!isCityDropdownOpen) {
+        setIsCityDropdownOpen(true)
+        setHighlightedCityIndex(0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedCityIndex(prev => (prev + 1) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!isCityDropdownOpen) {
+        setIsCityDropdownOpen(true)
+        setHighlightedCityIndex(filteredCityOptions.length > 0 ? filteredCityOptions.length - 1 : 0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedCityIndex(prev => (prev - 1 + filteredCityOptions.length) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'Enter') {
+      if (isCityDropdownOpen && filteredCityOptions[highlightedCityIndex]) {
+        event.preventDefault()
+        handleCitySelect(filteredCityOptions[highlightedCityIndex])
+        return
+      }
+      if (!isPending) {
+        event.preventDefault()
+        handleQuickSubmit()
+      }
+      return
+    }
+
+    if (event.key === 'Escape') {
+      setIsCityDropdownOpen(false)
+    }
   }
 
   // Быстрая отправка формы (Enter в любом поле)
@@ -69,13 +281,16 @@ export function QuickExpenseForm({
     startTransition(async () => {
       try {
         // Создаем расход без указания категории
+        const trimmedCityInput = formData.cityInput.trim()
+
         const expenseData: CreateExpenseData = {
           amount: formData.amount,
           description: formData.description,
           notes: formData.notes || undefined,
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
-          city_id: formData.city || undefined,
+          city_id: resolvedCity?.cityId || undefined,
+          city_input: trimmedCityInput || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит
         }
@@ -101,9 +316,11 @@ export function QuickExpenseForm({
           notes: '',
           expense_date: prev.expense_date, // Оставляем дату
           expense_time: getCurrentTimeHHMM(), // Обновляем время на текущее
-          city: '',
+          cityId: '',
+          cityInput: '',
           input_method: 'single'
         }))
+        setIsCityDropdownOpen(false)
 
         // Фокус обратно на сумму для следующего ввода
         setTimeout(() => {
@@ -122,7 +339,7 @@ export function QuickExpenseForm({
   }
 
   // Обработка Enter в полях
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: ReactKeyboardEvent<Element>) => {
     if (e.key === 'Enter' && !isPending) {
       e.preventDefault()
       handleQuickSubmit()
@@ -187,19 +404,72 @@ export function QuickExpenseForm({
         </div>
 
         {/* Город */}
-        <div className="grid grid-cols-1 gap-3">
-          <div>
+        <div className="grid grid-cols-1 gap-2">
+          <div className="relative">
             <Input
+              ref={cityInputRef}
               type="text"
-              value={formData.city}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, city: e.target.value }));
-              }}
-              onKeyPress={handleKeyPress}
+              value={formData.cityInput}
+              onChange={(e) => handleCityInputChange(e.target.value)}
+              onKeyDown={handleCityKeyDown}
+              onFocus={handleCityInputFocus}
+              onBlur={handleCityInputBlur}
               placeholder="Город"
               disabled={isPending}
               maxLength={100}
+              className="pl-10"
             />
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <CityMarkerIcon
+                preset={resolvedMarkerPreset}
+                active={resolvedCity ? resolvedCity.hasCoordinates : false}
+              />
+            </div>
+            {isCityDropdownOpen && filteredCityOptions.length > 0 && (
+              <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                <ul
+                  className="max-h-48 overflow-auto py-1"
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  {filteredCityOptions.map((option, index) => {
+                    const preset = option.markerPreset ? normaliseMarkerPreset(option.markerPreset) : undefined
+                    const secondaryLabels = option.synonyms
+                      .filter((synonym) => synonym !== option.cityName)
+                      .slice(0, 2)
+
+                    return (
+                      <li key={option.cityId}>
+                        <button
+                          type="button"
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
+                            highlightedCityIndex === index
+                              ? 'bg-sky-50 text-sky-700'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          )}
+                          onClick={() => handleCitySelect(option)}
+                        >
+                          <CityMarkerIcon preset={preset} active={option.hasCoordinates} />
+                          <span className="flex-1 truncate">{option.cityName}</span>
+                          {secondaryLabels.length > 0 && (
+                            <span className="max-w-[140px] truncate text-[11px] text-slate-400">
+                              {secondaryLabels.join(', ')}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+          <div className="min-h-[1rem] text-xs text-slate-500">
+            {formData.cityInput
+              ? resolvedCity
+                ? `Определён город «${resolvedCity.cityName}»`
+                : 'Новый город будет сохранён как непознанный'
+              : 'Укажите город, чтобы привязать расход к карте'}
           </div>
         </div>
 

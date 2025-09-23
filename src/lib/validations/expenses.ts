@@ -32,6 +32,13 @@ export const expenseSchema = z.object({
     }, 'Неверное время')
     .nullable()
     .optional(),
+  city_id: z.string()
+    .uuid('Неверный формат города')
+    .nullable()
+    .optional(),
+  city_input: z.string()
+    .max(100, 'Название города не должно превышать 100 символов')
+    .optional(),
   input_method: z.enum(['single', 'bulk_table'])
     .default('single'),
   batch_id: z.string()
@@ -73,6 +80,13 @@ export const updateExpenseSchema = z.object({
       return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
     }, 'Неверное время')
     .nullable()
+    .optional(),
+  city_id: z.string()
+    .uuid('Неверный формат города')
+    .nullable()
+    .optional(),
+  city_input: z.string()
+    .max(100, 'Название города не должно превышать 100 символов')
     .optional()
 })
 
@@ -107,6 +121,13 @@ export const bulkExpenseRowSchema = z.object({
       return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
     }, 'Неверное время')
     .nullable()
+    .optional(),
+  city_id: z.string()
+    .uuid('Неверный формат города')
+    .nullable()
+    .optional(),
+  city_input: z.string()
+    .max(100, 'Название города не должно превышать 100 символов')
     .optional(),
   city: z.string()
     .max(100, 'Название города не должно превышать 100 символов')
