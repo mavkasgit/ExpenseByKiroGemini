@@ -32,14 +32,14 @@ export async function getUnrecognizedCities() {
       .order('frequency', { ascending: false, nullsFirst: true })
 
     if (error) {
-      console.error('Ошибка загрузки непознанных городов:', error)
-      return { error: 'Не удалось загрузить список непознанных городов' }
+      console.error('Ошибка загрузки неопознанных городов:', error)
+      return { error: 'Не удалось загрузить список неопознанных городов' }
     }
 
     return { success: true, data: data ?? [] }
   } catch (error) {
-    console.error('Не удалось получить непознанные города:', error)
-    return { error: 'Произошла ошибка при загрузке непознанных городов' }
+    console.error('Не удалось получить неопознанные города:', error)
+    return { error: 'Произошла ошибка при загрузке неопознанных городов' }
   }
 }
 
@@ -61,7 +61,7 @@ export async function resolveUnrecognizedCity(data: { id: string }) {
       .eq('user_id', user.id)
 
     if (error) {
-      console.error('Ошибка удаления непознанного города:', error)
+      console.error('Ошибка удаления неопознанного города:', error)
       return { error: 'Не удалось обновить статус города' }
     }
 
@@ -69,7 +69,7 @@ export async function resolveUnrecognizedCity(data: { id: string }) {
     revalidatePath('/settings')
     return { success: true }
   } catch (error) {
-    console.error('Не удалось удалить непознанный город:', error)
+    console.error('Не удалось удалить неопознанный город:', error)
     return { error: 'Произошла ошибка при обновлении списка городов' }
   }
 }
@@ -93,7 +93,7 @@ export async function attachUnrecognizedCity(data: { unrecognizedCityId: string;
       .single()
 
     if (loadError || !unrecognized) {
-      console.error('Ошибка получения непознанного города:', loadError)
+      console.error('Ошибка получения неопознанного города:', loadError)
       return { error: 'Не удалось найти выбранный город' }
     }
 
@@ -113,8 +113,8 @@ export async function attachUnrecognizedCity(data: { unrecognizedCityId: string;
       .eq('user_id', user.id)
 
     if (deleteError) {
-      console.error('Ошибка удаления непознанного города после привязки:', deleteError)
-      return { error: 'Синоним добавлен, но не удалось обновить список непознанных городов' }
+      console.error('Ошибка удаления неопознанного города после привязки:', deleteError)
+      return { error: 'Синоним добавлен, но не удалось обновить список неопознанных городов' }
     }
 
     revalidatePath('/cities')
@@ -122,7 +122,7 @@ export async function attachUnrecognizedCity(data: { unrecognizedCityId: string;
 
     return { success: true, data: synonymResult.data }
   } catch (error) {
-    console.error('Не удалось прикрепить непознанный город:', error)
+    console.error('Не удалось прикрепить неопознанный город:', error)
     return { error: 'Произошла ошибка при добавлении альтернативного названия' }
   }
 }

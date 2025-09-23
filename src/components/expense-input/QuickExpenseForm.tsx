@@ -468,7 +468,7 @@ export function QuickExpenseForm({
             {formData.cityInput
               ? resolvedCity
                 ? `Определён город «${resolvedCity.cityName}»`
-                : 'Новый город будет сохранён как непознанный'
+                : 'Новый город будет сохранён как неопознанный'
               : 'Укажите город, чтобы привязать расход к карте'}
           </div>
         </div>

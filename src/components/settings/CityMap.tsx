@@ -6,6 +6,7 @@ import { feature } from 'topojson-client'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
 import type { GeometryCollection as TopologyGeometryCollection, Topology } from 'topojson-specification'
 import countries110m from 'world-atlas/countries-110m.json'
+import { getMarkerColor } from '@/lib/constants/cityMarkers'
 
 const WIDTH = 760
 const HEIGHT = 420
@@ -90,17 +91,6 @@ const countries = feature(
 
 const russiaFeature = countries.features.find(item => item.id === RUSSIA_ID) as Feature<Geometry> | undefined
 
-const DEFAULT_MARKER_COLOR = '#2563EB'
-
-const MARKER_COLORS: Record<string, string> = {
-  'islands#blueIcon': '#2563EB',
-  'islands#redIcon': '#DC2626',
-  'islands#greenIcon': '#16A34A',
-  'islands#darkOrangeIcon': '#EA580C',
-  'islands#violetIcon': '#7C3AED',
-  'islands#blackIcon': '#1F2937',
-}
-
 const normalisePreset = (preset?: string | null) => preset ?? 'islands#blueIcon'
 
 const CityMapComponent = ({ cities }: CityMapProps) => {
@@ -158,7 +148,7 @@ const CityMapComponent = ({ cities }: CityMapProps) => {
       const radius = Math.min(6 + city.alternate * 2, 14)
 
       const preset = normalisePreset(city.coordinates?.markerPreset)
-      const color = MARKER_COLORS[preset] ?? DEFAULT_MARKER_COLOR
+      const color = getMarkerColor(preset, '#2563EB')
 
       return {
         id: city.id,
