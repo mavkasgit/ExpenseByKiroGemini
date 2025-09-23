@@ -1,10 +1,49 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { signUpSchema, signInSchema, resetPasswordSchema, updatePasswordSchema } from '@/lib/validations/auth'
 import type { SignUpData, SignInData, ResetPasswordData, UpdatePasswordData } from '@/lib/validations/auth'
+
+async function getPublicSiteUrl() {
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (envUrl) {
+    return envUrl
+  }
+
+  const vercelUrls = [
+    process.env.VERCEL_BRANCH_URL,
+    process.env.VERCEL_URL,
+    process.env.VERCEL_DEPLOYMENT_URL,
+  ]
+
+  for (const url of vercelUrls) {
+    const normalizedUrl = url?.trim()
+    if (!normalizedUrl) {
+      continue
+    }
+
+    if (/^https?:\/\//i.test(normalizedUrl)) {
+      return normalizedUrl
+    }
+
+    return `https://${normalizedUrl}`
+  }
+
+  try {
+    const headerList = await headers()
+    const origin = headerList.get('origin')
+    if (origin) {
+      return origin
+    }
+  } catch (error) {
+    console.error('Failed to read request headers:', error)
+  }
+
+  return 'http://localhost:3000'
+}
 
 export async function signUp(data: SignUpData) {
   const supabase = await createServerClient()
@@ -12,12 +51,13 @@ export async function signUp(data: SignUpData) {
   try {
     // Validate the data
     const validatedData = signUpSchema.parse(data)
+    const siteUrl = await getPublicSiteUrl()
 
     const { data: authData, error } = await supabase.auth.signUp({
       email: validatedData.email,
       password: validatedData.password,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`,
+        emailRedirectTo: `${siteUrl}/auth/confirm`,
       },
     })
 
@@ -101,9 +141,10 @@ export async function resetPassword(data: ResetPasswordData) {
   try {
     // Validate the data
     const validatedData = resetPasswordSchema.parse(data)
+    const siteUrl = await getPublicSiteUrl()
 
     const { error } = await supabase.auth.resetPasswordForEmail(validatedData.email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/reset-password`,
+      redirectTo: `${siteUrl}/auth/reset-password`,
     })
 
     if (error) {
@@ -154,8 +195,8 @@ export async function updatePassword(data: UpdatePasswordData) {
 
 export async function signInWithGoogle() {
   const supabase = await createServerClient()
-
-  const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+  const siteUrl = await getPublicSiteUrl()
+  const redirectUrl = `${siteUrl}/auth/callback`
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -182,8 +223,8 @@ export async function signInWithGoogle() {
 
 export async function signInWithGoogleForceSelect() {
   const supabase = await createServerClient()
-
-  const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+  const siteUrl = await getPublicSiteUrl()
+  const redirectUrl = `${siteUrl}/auth/callback`
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
