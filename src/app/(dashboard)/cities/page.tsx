@@ -216,7 +216,7 @@ export default function CitiesPage() {
               </div>
 
               <div className="space-y-3">
-                <div className="h-[360px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                <div className="h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
                   {!yandexApiKey ? (
                     <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-700">
                       API-ключ для Яндекс Карт не настроен. Карта недоступна.

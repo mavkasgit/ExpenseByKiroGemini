@@ -95,7 +95,6 @@ export function CityManagerCreateCitySection({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Подтверждение координат</p>
           <div className="h-72 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
             {yandexApiKey ? (
               <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>

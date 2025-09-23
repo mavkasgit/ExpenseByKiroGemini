@@ -22,9 +22,9 @@ export function CityManagerOverviewMapSection({
   formatCityCoordinates,
 }: CityManagerOverviewMapSectionProps) {
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="flex flex-grow flex-col space-y-2 rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Карта всех городов</p>
-      <div className="h-[420px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+      <div className="h-[400px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
         {yandexApiKey ? (
           citiesWithCoordinates.length > 0 ? (
             <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
