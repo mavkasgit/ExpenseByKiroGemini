@@ -12,110 +12,31 @@ import {
   Modal,
   ConfirmationModal,
 } from '@/components/ui';
-import { SearchableSelect } from '@/components/ui/SearchableSelect';
-import { MarkerPresetPicker } from '@/components/cities/MarkerPresetPicker';
-import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon';
 import { useToast } from '@/hooks/useToast';
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCityName } from '@/lib/actions/synonyms';
 import { updateCityCoordinates } from '@/lib/actions/cities';
 import { attachUnrecognizedCity, getUnrecognizedCities, resolveUnrecognizedCity } from '@/lib/actions/unrecognizedCities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser';
 import type { CitySynonymWithCity, UnrecognizedCity } from '@/types';
-import { AddSynonymForm } from './AddSynonymForm';
-import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps';
 import { DEFAULT_MARKER_PRESET, markerPresetLookup } from '@/lib/constants/cityMarkers';
 import { parseCityCoordinates, parseManualCoordinatePair, normaliseMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates';
-import { cn } from '@/lib/utils';
+import {
+  DEFAULT_ZOOM,
+  MapState,
+  coordinatesAreEqual,
+  createDefaultMapState,
+  extractEventCoordinates,
+  extractPlacemarkCoordinates,
+  normaliseCoordinateInput,
+} from './cityManagerUtils';
+import { CityManagerUnrecognizedPanel, type SelectOption } from './CityManagerUnrecognizedPanel';
+import { CityManagerCreateCitySection } from './CityManagerCreateCitySection';
+import { CityManagerSynonymListSection } from './CityManagerSynonymListSection';
+import { CityManagerOverviewMapSection } from './CityManagerOverviewMapSection';
+import { CityManagerStatsCard } from './CityManagerStatsCard';
+import type { CityGroup, CityGroupWithCoordinates, CitySynonymRecord } from './cityManagerTypes';
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) {
-    return 'неизвестно';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleDateString('ru-RU');
-};
-
-
-type MapState = {
-  center: [number, number];
-  zoom: number;
-};
-
-const DEFAULT_CENTER: [number, number] = [55.751574, 37.573856];
-const DEFAULT_ZOOM = 4;
-
-const createDefaultMapState = (): MapState => ({
-  center: [...DEFAULT_CENTER] as [number, number],
-  zoom: DEFAULT_ZOOM,
-});
-
-const normaliseCoordinateInput = (value: string) => value.trim().replace(',', '.');
-
-const coordinatesAreEqual = (a: CityCoordinates | null, b: CityCoordinates | null) => {
-  if (!a && !b) {
-    return true;
-  }
-  if (!a || !b) {
-    return false;
-  }
-  const sameLat = Math.abs(a.lat - b.lat) < 1e-6;
-  const sameLon = Math.abs(a.lon - b.lon) < 1e-6;
-  const samePreset = normaliseMarkerPreset(a.markerPreset) === normaliseMarkerPreset(b.markerPreset);
-  return sameLat && sameLon && samePreset;
-};
-
-const extractEventCoordinates = (event: unknown): [number, number] | null => {
-  if (!event || typeof (event as { get?: unknown }).get !== 'function') {
-    return null;
-  }
-  const coords = (event as { get: (key: string) => unknown }).get('coords');
-  if (!Array.isArray(coords) || coords.length < 2) {
-    return null;
-  }
-  const [lat, lon] = coords as [number, number];
-  if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return null;
-  }
-  return [lat, lon];
-};
-
-const extractPlacemarkCoordinates = (target: unknown): [number, number] | null => {
-  const geometry = (target as { geometry?: { getCoordinates?: () => unknown } })?.geometry;
-  if (!geometry || typeof geometry.getCoordinates !== 'function') {
-    return null;
-  }
-  const coords = geometry.getCoordinates();
-  if (!Array.isArray(coords) || coords.length < 2) {
-    return null;
-  }
-  const [lat, lon] = coords as [number, number];
-  if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return null;
-  }
-  return [lat, lon];
-};
-
-interface CitySynonymRecord {
-  id: number;
-  cityId: string;
-  cityName: string;
-  synonym: string;
-  coordinates: CityCoordinates | null;
-}
-
-type CityGroup = {
-  cityId: string;
-  cityName: string;
-  entries: CitySynonymRecord[];
-  coordinates: CityCoordinates | null;
-};
-
-type CityGroupWithCoordinates = CityGroup & { coordinates: CityCoordinates };
-
-export function CitySynonymManager() {
+export function CityManager() {
   const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [newCity, setNewCity] = useState('')
@@ -436,7 +357,7 @@ export function CitySynonymManager() {
     }
   }, [selectedUnrecognizedCityId, selectedUnrecognizedCity])
 
-  const citySelectionOptions = useMemo(
+  const citySelectionOptions = useMemo<SelectOption[]>(
     () =>
       groupedSynonyms.map(group => ({
         value: group.cityId,
@@ -445,7 +366,7 @@ export function CitySynonymManager() {
     [groupedSynonyms]
   )
 
-  const unrecognizedCityOptions = useMemo(
+  const unrecognizedCityOptions = useMemo<SelectOption[]>(
     () =>
       unrecognizedCities.map(city => ({
         value: city.id,
@@ -530,6 +451,56 @@ export function CitySynonymManager() {
   const handleClearUnrecognizedSelection = useCallback(() => {
     setSelectedUnrecognizedCityId(null)
     setSelectedAttachCityId(null)
+  }, [])
+
+  const handleSelectAttachCity = useCallback((value: string | null) => {
+    setSelectedAttachCityId(value)
+  }, [])
+
+  const handleCityNameChange = useCallback((value: string) => {
+    setNewCity(value)
+  }, [])
+
+  const handleFindCityOnMap = useCallback(() => {
+    if (!newCity.trim()) {
+      return
+    }
+    void geocodeCity(newCity, { force: true })
+  }, [geocodeCity, newCity])
+
+  const handleMapInstanceChange = useCallback((ref: unknown) => {
+    mapRef.current = ref ?? null
+  }, [])
+
+  const handleCoordinateSelection = useCallback(
+    (lat: number, lon: number) => {
+      applyCoordinates({ lat, lon, markerPreset: selectedMarkerPreset })
+    },
+    [applyCoordinates, selectedMarkerPreset]
+  )
+
+  const handleManualLatChange = useCallback((value: string) => {
+    setManualLat(normaliseCoordinateInput(value))
+  }, [])
+
+  const handleManualLonChange = useCallback((value: string) => {
+    setManualLon(normaliseCoordinateInput(value))
+  }, [])
+
+  const handleManualBlur = useCallback(() => {
+    applyManualCoordinates({ silentOnEmpty: true })
+  }, [applyManualCoordinates])
+
+  const handleManualApply = useCallback(() => {
+    applyManualCoordinates()
+  }, [applyManualCoordinates])
+
+  const handleSearchTermChange = useCallback((value: string) => {
+    setSearchTerm(value)
+  }, [])
+
+  const handleOverviewMapInstanceChange = useCallback((ref: unknown) => {
+    overviewMapRef.current = ref ?? null
   }, [])
 
   const handleAttachUnrecognizedCity = useCallback(async () => {
@@ -825,412 +796,82 @@ export function CitySynonymManager() {
             <CardContent className="space-y-6">
               <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
                 <div className="space-y-5">
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Неопознанные города
-                      </span>
-                      <SearchableSelect
-                        options={unrecognizedCityOptions}
-                        value={selectedUnrecognizedCityId}
-                        onChange={handleSelectUnrecognizedCity}
-                        placeholder={isLoadingUnrecognized ? 'Загружаем список…' : 'Выберите город из расходов'}
-                        className="w-full"
-                        disabled={isLoadingUnrecognized || isSubmitting}
-                        maxVisibleOptions={3}
-                        forceOpen
-                      />
-                      <p className="text-xs text-slate-500">
-                        Список городов, найденных в выписках, отображается тремя первыми значениями. Раскройте его, чтобы увидеть полный перечень.
-                      </p>
-                    </div>
-                    {selectedUnrecognizedCity && (
-                      <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm">
-                          <div className="text-xs text-slate-500">
-                            <p>Всего упоминаний: {selectedUnrecognizedCity.frequency ?? '—'}</p>
-                            <p>Последний раз: {formatDate(selectedUnrecognizedCity.last_seen)}</p>
-                          </div>
-                          <p className="text-center font-medium text-slate-900">{selectedUnrecognizedCity.name}</p>
-                          <div className="text-right">
-                            <Button type="button" variant="ghost" size="sm" onClick={handleClearUnrecognizedSelection}>
-                              Сбросить
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-4">
-                          <div className="flex flex-col items-center justify-center rounded-lg border bg-slate-50/50 p-4">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={handleUseUnrecognizedCity}
-                              disabled={isSubmitting}
-                              className="w-full"
-                            >
-                              Использовать как новый город
-                            </Button>
-                          </div>
-                          <div className="space-y-3 rounded-lg border bg-slate-50/50 p-4">
-                            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Прикрепить как альтернативный вариант
-                            </p>
-                            <div className="flex flex-col items-stretch gap-2">
-                              <SearchableSelect
-                                options={citySelectionOptions}
-                                value={selectedAttachCityId}
-                                onChange={value => setSelectedAttachCityId(value)}
-                                placeholder="Выберите основной город"
-                                size="sm"
-                                disabled={isAttachingUnrecognized}
-                                maxVisibleOptions={3}
-                              />
-                              <Button
-                                type="button"
-                                onClick={handleAttachUnrecognizedCity}
-                                isLoading={isAttachingUnrecognized}
-                                disabled={isAttachingUnrecognized || !selectedAttachCityId}
-                              >
-                                Прикрепить
-                              </Button>
-                            </div>
-                            <p className="text-center text-xs text-slate-500">
-                              Альтернативное название будет добавлено к выбранному городу.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <CityManagerUnrecognizedPanel
+                    unrecognizedCityOptions={unrecognizedCityOptions}
+                    selectedUnrecognizedCityId={selectedUnrecognizedCityId}
+                    onSelectUnrecognizedCity={handleSelectUnrecognizedCity}
+                    isLoadingUnrecognized={isLoadingUnrecognized}
+                    isSubmitting={isSubmitting}
+                    selectedUnrecognizedCity={selectedUnrecognizedCity}
+                    onClearUnrecognizedSelection={handleClearUnrecognizedSelection}
+                    onUseUnrecognizedCity={handleUseUnrecognizedCity}
+                    citySelectionOptions={citySelectionOptions}
+                    selectedAttachCityId={selectedAttachCityId}
+                    onSelectAttachCity={handleSelectAttachCity}
+                    onAttachUnrecognizedCity={handleAttachUnrecognizedCity}
+                    isAttachingUnrecognized={isAttachingUnrecognized}
+                  />
 
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-2">
-                      <div className="flex-grow space-y-2">
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
-                          Новый город
-                        </label>
-                        <div className="relative">
-                          <Input
-                            id="synonym-city"
-                            placeholder="Например: Санкт-Петербург"
-                            value={newCity}
-                            onChange={(event) => setNewCity(event.target.value)}
-                            disabled={isSubmitting}
-                            className="h-11 pl-12"
-                          />
-                          <MarkerPresetPicker
-                            value={selectedMarkerPreset}
-                            onChange={handleNewCityMarkerPresetChange}
-                            disabled={isSubmitting}
-                            align="start"
-                            triggerClassName="absolute inset-y-0 left-0 flex h-full w-10 items-center justify-center rounded-l-md border-r border-slate-300 bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex flex-shrink-0 gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => geocodeCity(newCity, { force: true })}
-                          isLoading={isSearchingCoordinates}
-                          disabled={!newCity.trim() || isSubmitting}
-                          className="h-11"
-                        >
-                          Найти на карте
-                        </Button>
-                        <Button
-                          type="submit"
-                          isLoading={isSubmitting}
-                          disabled={isSubmitting || !selectedCoordinates}
-                          className="h-11"
-                        >
-                          Добавить город
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:justify-end">
-                      <p className="sm:text-right">
-                        Укажите название и подтвердите координаты перед сохранением.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  <CityManagerCreateCitySection
+                    newCity={newCity}
+                    onCityChange={handleCityNameChange}
+                    isSubmitting={isSubmitting}
+                    onFindOnMap={handleFindCityOnMap}
+                    isSearchingCoordinates={isSearchingCoordinates}
+                    selectedCoordinates={selectedCoordinates}
+                    selectedMarkerPreset={selectedMarkerPreset}
+                    onMarkerPresetChange={handleNewCityMarkerPresetChange}
+                    yandexApiKey={yandexApiKey}
+                    mapState={mapState}
+                    onMapInstanceChange={handleMapInstanceChange}
+                    onSelectCoordinates={handleCoordinateSelection}
+                    manualLat={manualLat}
+                    manualLon={manualLon}
+                    onManualLatChange={handleManualLatChange}
+                    onManualLonChange={handleManualLonChange}
+                    onManualBlur={handleManualBlur}
+                    onManualApply={handleManualApply}
+                  />
 
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Подтверждение координат</p>
-                    <div className="h-72 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                      {yandexApiKey ? (
-                        <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
-                          <YandexMap
-                            state={mapState}
-                            width="100%"
-                            height="100%"
-                            modules={['geoObject.addon.balloon', 'geoObject.addon.hint']}
-                            instanceRef={(ref) => {
-                              mapRef.current = ref ?? null
-                            }}
-                            onClick={(event: unknown) => {
-                              const coords = extractEventCoordinates(event)
-                              if (!coords) {
-                                return
-                              }
-                              const [lat, lon] = coords
-                              applyCoordinates({ lat, lon, markerPreset: selectedMarkerPreset })
-                            }}
-                          >
-                            {selectedCoordinates && (
-                              <Placemark
-                                geometry={[selectedCoordinates.lat, selectedCoordinates.lon]}
-                                options={{ draggable: true, preset: selectedCoordinates.markerPreset ?? DEFAULT_MARKER_PRESET }}
-                                onDragEnd={(event: { get: (key: string) => unknown }) => {
-                                  const coords = extractPlacemarkCoordinates(event.get('target'))
-                                  if (!coords) {
-                                    return
-                                  }
-                                  const [lat, lon] = coords
-                                  applyCoordinates({ lat, lon, markerPreset: selectedMarkerPreset })
-                                }}
-                              />
-                            )}
-                          </YandexMap>
-                        </YMaps>
-                      ) : (
-                        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-700">
-                          API-ключ для Яндекс Карт не настроен. Укажите координаты вручную.
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500">Нажмите на карту или перетащите маркер, чтобы уточнить координаты.</p>
-                  </div>
-
-                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-                    <p className="text-sm font-medium text-slate-900">Ручной ввод координат</p>
-                    <div className="grid gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="manual-lat">
-                          Широта (lat)
-                        </label>
-                        <Input
-                          id="manual-lat"
-                          value={manualLat}
-                          onChange={(event) => setManualLat(normaliseCoordinateInput(event.target.value))}
-                          onBlur={() => applyManualCoordinates({ silentOnEmpty: true })}
-                          inputMode="decimal"
-                          placeholder="Например: 59.9386"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="manual-lon">
-                          Долгота (lon)
-                        </label>
-                        <Input
-                          id="manual-lon"
-                          value={manualLon}
-                          onChange={(event) => setManualLon(normaliseCoordinateInput(event.target.value))}
-                          onBlur={() => applyManualCoordinates({ silentOnEmpty: true })}
-                          inputMode="decimal"
-                          placeholder="Например: 30.3141"
-                        />
-                      </div>
-                    </div>
-                    <Button type="button" variant="secondary" onClick={() => applyManualCoordinates()} disabled={isSubmitting}>
-                      Применить координаты
-                    </Button>
-                    <p className="text-xs text-slate-500">
-                      Если автоматический поиск не помог, введите координаты вручную и нажмите «Применить».
-                    </p>
-                  </div>
                 </div>
               </form>
 
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="city-search">
-                    Поиск по списку городов
-                  </label>
-                  <div className="relative">
-                    <Input
-                      id="city-search"
-                      placeholder="Поиск по городу или синониму"
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      onKeyDown={handleSearchKeyDown}
-                      className="pl-9"
-                      type="search"
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
-                  </div>
-                  <p className="text-xs text-slate-500">Найдите город в существующем списке для редактирования или удаления.</p>
-                </div>
-
-                {isLoading ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    Загружаем текущий список городов…
-                  </div>
-                ) : filteredGroupedSynonyms.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    Ничего не найдено. Проверьте запрос или добавьте новый город.
-                  </div>
-                ) : (
-                  filteredGroupedSynonyms.map(group => {
-                    const canonicalName = group.cityName;
-                    const synonymsForCity = group.entries.filter(entry => entry.synonym.trim().toLowerCase() !== canonicalName.trim().toLowerCase());
-                    const hasCoordinates = Boolean(group.coordinates);
-                    const coordinatesHint = hasCoordinates ? 'Город отображается на карте' : 'Координаты не определены';
-                    const markerLabel = markerPresetLookup.get(normaliseMarkerPreset(group.coordinates?.markerPreset))?.label;
-                    const isMarkerUpdating = Boolean(markerUpdatingMap[group.cityId]);
-
-                    return (
-                      <div key={group.cityId} className="rounded-lg border border-slate-200 bg-white">
-                        <div className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                {hasCoordinates ? (
-                                  <MarkerPresetPicker
-                                    value={group.coordinates?.markerPreset ?? DEFAULT_MARKER_PRESET}
-                                    onChange={(value) => handleMarkerPresetChange(group.cityId, value)}
-                                    disabled={isMarkerUpdating || isSubmitting}
-                                    triggerClassName="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-slate-100 text-slate-600 transition hover:bg-slate-200 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
-                                  />
-                                ) : (
-                                  <span className="flex items-center justify-center rounded-full bg-slate-100 p-1" title={coordinatesHint}>
-                                    <CityMarkerIcon active={false} preset={group.coordinates?.markerPreset} />
-                                    <span className="sr-only">{coordinatesHint}</span>
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleCityNameClick(group)}
-                                  className="rounded px-1 text-left text-sm font-medium text-slate-900 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                                >
-                                  {canonicalName}
-                                  <span className="ml-2 text-xs font-normal text-slate-500">
-                                    ({formatCityCoordinates(group.coordinates ?? null)})
-                                  </span>
-                                </button>
-                              </div>
-                              <p className="text-xs text-slate-500">
-                                {synonymsForCity.length > 0
-                                  ? `Альтернативных написаний: ${synonymsForCity.length}`
-                                  : 'Только основной вариант'}
-                              </p>
-                            </div>
-                            <div className="w-full max-w-xs space-y-1">
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={(e) => group.cityId && handleEditClick(e, { id: group.cityId, name: canonicalName })} disabled={!group.cityId}>
-                              Редактировать
-                            </Button>
-                            <Button variant="danger" size="sm" onClick={(e) => group.cityId && handleDeleteClick(e, { id: group.cityId, name: canonicalName })} disabled={!group.cityId}>
-                              Удалить
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 border-t border-slate-200 px-4 py-4">
-                          {synonymsForCity.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {synonymsForCity.map(entry => (
-                                <span
-                                  key={entry.id}
-                                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
-                                >
-                                  {entry.synonym}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSynonym(entry)}
-                                    className="rounded-full border border-transparent px-1.5 text-slate-400 transition hover:border-red-400 hover:text-red-500"
-                                    disabled={!!deletingMap[entry.id.toString()] || isSubmitting}
-                                    aria-label="Удалить синоним"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-500">Добавьте варианты написания, которые встречаются в отчетах.</p>
-                          )}
-
-                          <AddSynonymForm cityId={group.cityId} cityName={canonicalName} onSynonymAdded={loadSynonyms} />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              <CityManagerSynonymListSection
+                searchTerm={searchTerm}
+                onSearchTermChange={handleSearchTermChange}
+                onSearchKeyDown={handleSearchKeyDown}
+                isLoading={isLoading}
+                filteredGroupedSynonyms={filteredGroupedSynonyms}
+                deletingMap={deletingMap}
+                isSubmitting={isSubmitting}
+                onDeleteSynonym={handleDeleteSynonym}
+                onCityNameClick={handleCityNameClick}
+                onEditCity={handleEditClick}
+                onDeleteCity={handleDeleteClick}
+                onMarkerPresetChange={handleMarkerPresetChange}
+                markerUpdatingMap={markerUpdatingMap}
+                formatCityCoordinates={formatCityCoordinates}
+                onSynonymAdded={loadSynonyms}
+              />
             </CardContent>
           </Card>
 
           <div className="space-y-3">
-            <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Карта всех городов</p>
-              <div className="h-[420px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                {yandexApiKey ? (
-                  citiesWithCoordinates.length > 0 ? (
-                    <YMaps query={{ apikey: yandexApiKey, lang: 'ru_RU' }}>
-                      <YandexMap
-                        state={overviewMapState}
-                        width="100%"
-                        height="100%"
-                        modules={['geoObject.addon.balloon', 'geoObject.addon.hint']}
-                        instanceRef={(ref) => {
-                          overviewMapRef.current = ref ?? null
-                        }}
-                      >
-                        {citiesWithCoordinates.map(city => (
-                          <Placemark
-                            key={city.cityId}
-                            geometry={[city.coordinates.lat, city.coordinates.lon]}
-                            properties={{
-                              balloonContent: `<strong>${city.cityName}</strong><br/>${formatCityCoordinates(city.coordinates)}`,
-                              hintContent: `${city.cityName} (${formatCityCoordinates(city.coordinates)})`
-                            }}
-                            options={{ preset: city.coordinates.markerPreset ?? DEFAULT_MARKER_PRESET }}
-                          />
-                        ))}
-                      </YandexMap>
-                    </YMaps>
-                  ) : (
-                    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
-                      Для отображения на карте добавьте координаты городов.
-                    </div>
-                  )
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-700">
-                    API-ключ для Яндекс Карт не настроен. Карта городов недоступна.
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-slate-500">На карте отображаются все города с заданными координатами.</p>
-            </div>
-            <Card>
-              <CardHeader>
-                <CardTitle>Статистика справочника</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3">
-                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                  <span className="text-sm text-slate-500">Городов</span>
-                  <span className="text-lg font-semibold text-slate-900">{stats.totalCities}</span>
-                </div>
-                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                  <span className="text-sm text-slate-500">Всего записей</span>
-                  <span className="text-lg font-semibold text-slate-900">{stats.totalSynonyms}</span>
-                </div>
-                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                  <span className="text-sm text-slate-500">Альтернативных вариантов</span>
-                  <span className="text-lg font-semibold text-slate-900">{stats.customSynonyms}</span>
-                </div>
-                <div className="flex items-baseline justify-between rounded-lg border border-slate-200 px-3 py-2">
-                  <span className="text-sm text-slate-500">Покрытие</span>
-                  <span className="text-lg font-semibold text-slate-900">{stats.coverage}%</span>
-                </div>
-              </CardContent>
-            </Card>
+            <CityManagerOverviewMapSection
+              yandexApiKey={yandexApiKey}
+              citiesWithCoordinates={citiesWithCoordinates}
+              overviewMapState={overviewMapState}
+              onMapInstanceChange={handleOverviewMapInstanceChange}
+              formatCityCoordinates={formatCityCoordinates}
+            />
+            <CityManagerStatsCard
+              totalCities={stats.totalCities}
+              totalSynonyms={stats.totalSynonyms}
+              customSynonyms={stats.customSynonyms}
+              coverage={stats.coverage}
+            />
           </div>
-      </div>
+        </div>
       <ConfirmationModal
         isOpen={!!cityToDelete}
         onClose={() => setCityToDelete(null)}

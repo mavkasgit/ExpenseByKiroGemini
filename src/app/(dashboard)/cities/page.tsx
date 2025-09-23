@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StickyPageHeader } from '@/components/layout/StickyPageHeader'
-import { CitySynonymManager } from '@/components/settings/CitySynonymManager'
+import { CityManager } from '@/components/cities/CityManager'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps'
@@ -266,7 +266,7 @@ export default function CitiesPage() {
           </CardContent>
         </Card>
 
-        <CitySynonymManager />
+        <CityManager />
       </main>
     </div>
   )
