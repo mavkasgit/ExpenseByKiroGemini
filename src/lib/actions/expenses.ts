@@ -99,7 +99,7 @@ export async function createExpense(data: CreateExpenseData) {
             })
         }
       } catch (rememberError) {
-        console.error('Не удалось сохранить непознанный город', rememberError)
+        console.error('Не удалось сохранить неопознанный город', rememberError)
       }
     }
 
