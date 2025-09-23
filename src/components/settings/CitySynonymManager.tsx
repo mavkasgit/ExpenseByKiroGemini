@@ -846,32 +846,35 @@ export function CitySynonymManager() {
                     </div>
                     {selectedUnrecognizedCity && (
                       <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-700">
-                          <div className="space-y-1">
-                            <p className="font-medium text-slate-900">{selectedUnrecognizedCity.name}</p>
-                            <p className="text-xs text-slate-500">
-                              Всего упоминаний: {selectedUnrecognizedCity.frequency ?? '—'} · Последний раз: {formatDate(selectedUnrecognizedCity.last_seen)}
-                            </p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-sm">
+                          <div className="text-xs text-slate-500">
+                            <p>Всего упоминаний: {selectedUnrecognizedCity.frequency ?? '—'}</p>
+                            <p>Последний раз: {formatDate(selectedUnrecognizedCity.last_seen)}</p>
                           </div>
-                          <Button type="button" variant="ghost" size="sm" onClick={handleClearUnrecognizedSelection}>
-                            Сбросить
-                          </Button>
+                          <p className="text-center font-medium text-slate-900">{selectedUnrecognizedCity.name}</p>
+                          <div className="text-right">
+                            <Button type="button" variant="ghost" size="sm" onClick={handleClearUnrecognizedSelection}>
+                              Сбросить
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleUseUnrecognizedCity}
-                            disabled={isSubmitting}
-                            className="lg:self-start"
-                          >
-                            Использовать как новый город
-                          </Button>
-                          <div className="flex flex-1 flex-col gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-4">
+                          <div className="flex flex-col items-center justify-center rounded-lg border bg-slate-50/50 p-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleUseUnrecognizedCity}
+                              disabled={isSubmitting}
+                              className="w-full"
+                            >
+                              Использовать как новый город
+                            </Button>
+                          </div>
+                          <div className="space-y-3 rounded-lg border bg-slate-50/50 p-4">
+                            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                               Прикрепить как альтернативный вариант
-                            </span>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            </p>
+                            <div className="flex flex-col items-stretch gap-2">
                               <SearchableSelect
                                 options={citySelectionOptions}
                                 value={selectedAttachCityId}
@@ -879,7 +882,6 @@ export function CitySynonymManager() {
                                 placeholder="Выберите основной город"
                                 size="sm"
                                 disabled={isAttachingUnrecognized}
-                                className="w-full sm:flex-1"
                                 maxVisibleOptions={3}
                               />
                               <Button
@@ -891,8 +893,8 @@ export function CitySynonymManager() {
                                 Прикрепить
                               </Button>
                             </div>
-                            <p className="text-xs text-slate-500">
-                              Альтернативное название будет добавлено к выбранному городу, а запись исчезнет из списка неопознанных.
+                            <p className="text-center text-xs text-slate-500">
+                              Альтернативное название будет добавлено к выбранному городу.
                             </p>
                           </div>
                         </div>
@@ -901,49 +903,54 @@ export function CitySynonymManager() {
                   </div>
 
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
-                        Новый город
-                      </label>
-                      <div className="relative">
-                        <Input
-                          id="synonym-city"
-                          placeholder="Например: Санкт-Петербург"
-                          value={newCity}
-                          onChange={(event) => setNewCity(event.target.value)}
-                          disabled={isSubmitting}
-                          className="h-11 pl-12"
-                        />
-                        <MarkerPresetPicker
-                          value={selectedMarkerPreset}
-                          onChange={handleNewCityMarkerPresetChange}
-                          disabled={isSubmitting}
-                          align="start"
-                          triggerClassName="absolute inset-y-0 left-0 flex h-full w-10 items-center justify-center rounded-l-md border-0 bg-transparent text-slate-500 transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
-                        />
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-2">
+                      <div className="flex-grow space-y-2">
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="synonym-city">
+                          Новый город
+                        </label>
+                        <div className="relative">
+                          <Input
+                            id="synonym-city"
+                            placeholder="Например: Санкт-Петербург"
+                            value={newCity}
+                            onChange={(event) => setNewCity(event.target.value)}
+                            disabled={isSubmitting}
+                            className="h-11 pl-12"
+                          />
+                          <MarkerPresetPicker
+                            value={selectedMarkerPreset}
+                            onChange={handleNewCityMarkerPresetChange}
+                            disabled={isSubmitting}
+                            align="start"
+                            triggerClassName="absolute inset-y-0 left-0 flex h-full w-10 items-center justify-center rounded-l-md border-r border-slate-300 bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
+                          />
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        Маркер: {selectedMarkerLabel}. Этот маркер будет использоваться для отображения города на карте.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                      <p className="text-xs text-slate-500">
-                        Укажите название и подтвердите координаты перед сохранением.
-                      </p>
-                      <div className="flex flex-wrap gap-2 sm:justify-end">
+                      <div className="flex flex-shrink-0 gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           onClick={() => geocodeCity(newCity, { force: true })}
                           isLoading={isSearchingCoordinates}
                           disabled={!newCity.trim() || isSubmitting}
+                          className="h-11"
                         >
                           Найти на карте
                         </Button>
-                        <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || !selectedCoordinates}>
+                        <Button
+                          type="submit"
+                          isLoading={isSubmitting}
+                          disabled={isSubmitting || !selectedCoordinates}
+                          className="h-11"
+                        >
                           Добавить город
                         </Button>
                       </div>
+                    </div>
+                    <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:justify-end">
+                      <p className="sm:text-right">
+                        Укажите название и подтвердите координаты перед сохранением.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1110,15 +1117,6 @@ export function CitySynonymManager() {
                               </p>
                             </div>
                             <div className="w-full max-w-xs space-y-1">
-                              <p className={cn('text-[11px]', hasCoordinates ? 'text-slate-500' : 'text-amber-600')}>
-                                {hasCoordinates
-                                  ? isMarkerUpdating
-                                    ? 'Обновляем маркер…'
-                                    : markerLabel
-                                      ? `Маркер: ${markerLabel}`
-                                      : 'Используется стандартный маркер'
-                                  : 'Сначала задайте координаты, чтобы выбрать маркер.'}
-                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
