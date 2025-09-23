@@ -828,7 +828,7 @@ export function CitySynonymManager() {
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Непознанные города
+                        Неопознанные города
                       </span>
                       <SearchableSelect
                         options={unrecognizedCityOptions}
@@ -837,13 +837,15 @@ export function CitySynonymManager() {
                         placeholder={isLoadingUnrecognized ? 'Загружаем список…' : 'Выберите город из расходов'}
                         className="w-full"
                         disabled={isLoadingUnrecognized || isSubmitting}
+                        maxVisibleOptions={3}
+                        forceOpen
                       />
                       <p className="text-xs text-slate-500">
-                        Список городов, найденных в выписках, но ещё не добавленных в справочник.
+                        Список городов, найденных в выписках, отображается тремя первыми значениями. Раскройте его, чтобы увидеть полный перечень.
                       </p>
                     </div>
                     {selectedUnrecognizedCity && (
-                      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+                      <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-700">
                           <div className="space-y-1">
                             <p className="font-medium text-slate-900">{selectedUnrecognizedCity.name}</p>
@@ -855,44 +857,44 @@ export function CitySynonymManager() {
                             Сбросить
                           </Button>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="outline" onClick={handleUseUnrecognizedCity} disabled={isSubmitting}>
-                            Использовать как новый город
-                          </Button>
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
                           <Button
                             type="button"
-                            variant="secondary"
-                            onClick={() => setNewCity(selectedUnrecognizedCity.name)}
+                            variant="outline"
+                            onClick={handleUseUnrecognizedCity}
                             disabled={isSubmitting}
+                            className="lg:self-start"
                           >
-                            Подставить в поле ввода
+                            Использовать как новый город
                           </Button>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Прикрепить как альтернативный вариант
-                          </label>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                            <SearchableSelect
-                              options={citySelectionOptions}
-                              value={selectedAttachCityId}
-                              onChange={value => setSelectedAttachCityId(value)}
-                              placeholder="Выберите основной город"
-                              size="sm"
-                              disabled={isAttachingUnrecognized}
-                            />
-                            <Button
-                              type="button"
-                              onClick={handleAttachUnrecognizedCity}
-                              isLoading={isAttachingUnrecognized}
-                              disabled={isAttachingUnrecognized || !selectedAttachCityId}
-                            >
-                              Прикрепить
-                            </Button>
+                          <div className="flex flex-1 flex-col gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Прикрепить как альтернативный вариант
+                            </span>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <SearchableSelect
+                                options={citySelectionOptions}
+                                value={selectedAttachCityId}
+                                onChange={value => setSelectedAttachCityId(value)}
+                                placeholder="Выберите основной город"
+                                size="sm"
+                                disabled={isAttachingUnrecognized}
+                                className="w-full sm:flex-1"
+                                maxVisibleOptions={3}
+                              />
+                              <Button
+                                type="button"
+                                onClick={handleAttachUnrecognizedCity}
+                                isLoading={isAttachingUnrecognized}
+                                disabled={isAttachingUnrecognized || !selectedAttachCityId}
+                              >
+                                Прикрепить
+                              </Button>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Альтернативное название будет добавлено к выбранному городу, а запись исчезнет из списка неопознанных.
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-500">
-                            Альтернативное название будет добавлено к выбранному городу, а запись исчезнет из списка непознанных.
-                          </p>
                         </div>
                       </div>
                     )}
@@ -916,7 +918,6 @@ export function CitySynonymManager() {
                           value={selectedMarkerPreset}
                           onChange={handleNewCityMarkerPresetChange}
                           disabled={isSubmitting}
-                          withLabels
                           align="start"
                           triggerClassName="absolute inset-y-0 left-0 flex h-full w-10 items-center justify-center rounded-l-md border-0 bg-transparent text-slate-500 transition hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
                         />
