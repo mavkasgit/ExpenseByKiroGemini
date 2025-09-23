@@ -5,6 +5,7 @@ export const updateCityCoordinatesSchema = z.object({
   coordinates: z.object({
     lat: z.number(),
     lon: z.number(),
+    markerPreset: z.string().min(1).optional().nullable(),
   }),
 });
 
