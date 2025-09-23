@@ -160,13 +160,16 @@ export function ExpenseForm({
     startTransition(async () => {
       try {
         // Создаем расход без указания категории - система сама определит
+        const trimmedCityInput = formData.city.trim()
+
         const expenseData: CreateExpenseData = {
           amount: formData.amount,
           description: formData.description,
           notes: formData.notes || undefined,
           expense_date: formData.expense_date,
           expense_time: formData.expense_time || undefined,
-          city_id: formData.city || undefined,
+          city_id: undefined,
+          city_input: trimmedCityInput || undefined,
           input_method: formData.input_method
           // category_id не указываем - система автоматически определит или поместит в неопознанные
         }

@@ -511,6 +511,7 @@ export type CategoryKeywordWithSynonyms = CategoryKeyword & {
 
 export type ExpenseWithCategory = Expense & {
   category: Category | null
+  city?: Pick<City, 'id' | 'name' | 'coordinates'> | null
 }
 
 export type CategoryWithKeywords = Category & {
@@ -533,6 +534,7 @@ export type CreateExpenseData = {
   input_method?: 'single' | 'bulk_table'
   batch_id?: string
   city_id?: string | null // Ссылка на справочник городов
+  city_input?: string | null // Исходный ввод города
 }
 
 export type CreateCategoryData = {

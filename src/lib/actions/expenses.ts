@@ -21,6 +21,115 @@ export async function createExpense(data: CreateExpenseData) {
     // Проверяем данные
     const validatedData = expenseSchema.parse(data)
 
+    const resolveCityByInput = async (value: string) => {
+      const normalized = value.trim()
+      if (!normalized) {
+        return null
+      }
+
+      const { data: directCity } = await supabase
+        .from('cities')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .ilike('name', normalized)
+        .maybeSingle()
+
+      if (directCity?.id) {
+        return directCity
+      }
+
+      const { data: synonymMatch } = await supabase
+        .from('city_synonyms')
+        .select('city_id, city:cities(id, name)')
+        .eq('user_id', user.id)
+        .ilike('synonym', normalized)
+        .maybeSingle()
+
+      if (synonymMatch?.city_id && synonymMatch.city) {
+        return synonymMatch.city as { id: string; name: string }
+      }
+
+      const { data: aliasMatch } = await supabase
+        .from('city_aliases')
+        .select('city_id, city:cities(id, name)')
+        .eq('user_id', user.id)
+        .ilike('name', normalized)
+        .maybeSingle()
+
+      if (aliasMatch?.city) {
+        return aliasMatch.city as { id: string; name: string }
+      }
+
+      return null
+    }
+
+    const rememberUnrecognizedCity = async (value: string) => {
+      const normalized = value.trim()
+      if (!normalized) {
+        return
+      }
+
+      try {
+        const { data: existing } = await supabase
+          .from('unrecognized_cities')
+          .select('id, frequency')
+          .eq('user_id', user.id)
+          .ilike('name', normalized)
+          .maybeSingle()
+
+        const now = new Date().toISOString()
+
+        if (existing?.id) {
+          await supabase
+            .from('unrecognized_cities')
+            .update({
+              frequency: (existing.frequency ?? 0) + 1,
+              last_seen: now
+            })
+            .eq('id', existing.id)
+        } else {
+          await supabase
+            .from('unrecognized_cities')
+            .insert({
+              user_id: user.id,
+              name: normalized,
+              frequency: 1,
+              first_seen: now,
+              last_seen: now
+            })
+        }
+      } catch (rememberError) {
+        console.error('Не удалось сохранить непознанный город', rememberError)
+      }
+    }
+
+    const trimmedCityInput = (validatedData.city_input ?? '').trim()
+    let resolvedCityId: string | null = null
+
+    if (validatedData.city_id) {
+      const { data: existingCity } = await supabase
+        .from('cities')
+        .select('id')
+        .eq('id', validatedData.city_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (existingCity?.id) {
+        resolvedCityId = existingCity.id
+      }
+    }
+
+    if (!resolvedCityId && trimmedCityInput) {
+      const matchedCity = await resolveCityByInput(trimmedCityInput)
+      if (matchedCity?.id) {
+        resolvedCityId = matchedCity.id
+      } else {
+        await rememberUnrecognizedCity(trimmedCityInput)
+      }
+    }
+
+    const rawCityInput = trimmedCityInput || null
+
     // Автоматическая категоризация по описанию
     let finalCategoryId: string | null = null
     let matchedKeywords: string[] = []
@@ -52,11 +161,14 @@ export async function createExpense(data: CreateExpenseData) {
         batch_id: validatedData.batch_id || null,
         status,
         matched_keywords: matchedKeywords.length > 0 ? matchedKeywords : null,
-        auto_categorized: autoCategorized
+        auto_categorized: autoCategorized,
+        city_id: resolvedCityId,
+        raw_city_input: rawCityInput
       })
       .select(`
         *,
-        category:categories(*)
+        category:categories(*),
+        city:cities(id, name, coordinates)
       `)
       .single()
 
@@ -144,7 +256,8 @@ export async function updateExpense(id: string, data: UpdateExpenseData) {
       .eq('user_id', user.id)
       .select(`
         *,
-        category:categories(*)
+        category:categories(*),
+        city:cities(id, name, coordinates)
       `)
       .single()
 
@@ -216,7 +329,8 @@ export async function getExpenses(filters?: {
       .from('expenses')
       .select(`
         *,
-        category:categories(*)
+        category:categories(*),
+        city:cities(id, name, coordinates)
       `)
       .eq('user_id', user.id)
 
@@ -279,7 +393,8 @@ export async function getExpenseById(id: string) {
       .from('expenses')
       .select(`
         *,
-        category:categories(*)
+        category:categories(*),
+        city:cities(id, name, coordinates)
       `)
       .eq('id', id)
       .eq('user_id', user.id)
@@ -410,7 +525,9 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
           batch_id: batchId,
           status,
           matched_keywords: matchedKeywords.length > 0 ? matchedKeywords : null,
-          auto_categorized: autoCategorized
+          auto_categorized: autoCategorized,
+          city_id: validatedData.city_id ?? null,
+          raw_city_input: validatedData.city_input?.trim() || null
         })
       } catch (err) {
         errors.push({
@@ -433,7 +550,8 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       .insert(processedExpenses)
       .select(`
         *,
-        category:categories(*)
+        category:categories(*),
+        city:cities(id, name, coordinates)
       `)
 
     if (error) {
