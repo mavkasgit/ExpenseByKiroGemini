@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/Button'
-import { getCityStats } from '@/lib/utils/cityParser'
+import { batchExtractCities } from '@/lib/utils/cityParser'
 import type { Category } from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
 
@@ -57,9 +57,47 @@ export function BulkExpensePreview({
       return acc
     }, {} as Record<string, { name: string; count: number; amount: number; color?: string }>)
 
-    // Статистика по городам из примечаний
-    const descriptions = expenses.map(expense => expense.description || '')
-    const cityStats = getCityStats(descriptions)
+    // Статистика по городам (учитываем явное поле города и распознавание из описания)
+    const cityStats = (() => {
+      const statsMap = new Map<string, { display: string; count: number }>()
+
+      const addCity = (key: string, display: string) => {
+        const existing = statsMap.get(key)
+        if (existing) {
+          existing.count += 1
+        } else {
+          statsMap.set(key, { display, count: 1 })
+        }
+      }
+
+      expenses.forEach(expense => {
+        const cityValue = expense.city?.trim()
+        if (cityValue) {
+          addCity(cityValue.toUpperCase(), cityValue)
+        }
+      })
+
+      const descriptionsToParse = expenses
+        .filter(expense => !expense.city?.trim() && expense.description)
+        .map(expense => expense.description || '')
+
+      if (descriptionsToParse.length > 0) {
+        const parsed = batchExtractCities(descriptionsToParse)
+        parsed.forEach(result => {
+          if (result.city && result.confidence > 0.5) {
+            const display = result.displayCity || result.city
+            addCity(result.city.toUpperCase(), display)
+          }
+        })
+      }
+
+      const result: Record<string, number> = {}
+      statsMap.forEach(({ display, count }) => {
+        result[display] = count
+      })
+
+      return result
+    })()
 
     return {
       totalAmount,
@@ -177,6 +215,7 @@ export function BulkExpensePreview({
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Дата</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Время</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Описание</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Город</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Категория</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-700">Сумма</th>
               </tr>
@@ -198,6 +237,9 @@ export function BulkExpensePreview({
                       {expense.notes && (
                         <div className="text-xs text-gray-500 mt-1">{expense.notes}</div>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {expense.city?.trim() || '—'}
                     </td>
                     <td className="px-3 py-2">
                       {category ? (

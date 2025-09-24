@@ -23,7 +23,7 @@ function Tooltip({ children, content }: { children: React.ReactNode; content: st
 // ColumnMapping импортирован из @/types
 
 interface FieldAssignment {
-  field: 'amount' | 'description' | 'expense_date' | 'notes'
+  field: 'amount' | 'description' | 'city' | 'expense_date' | 'notes'
   assignedColumn: number | null
   required: boolean
 }
@@ -41,6 +41,7 @@ interface ColumnMappingModalProps {
 const FIELD_ICONS = {
   amount: '💰',
   description: '📝',
+  city: '📍',
   expense_date: '📅',
   notes: '📋',
   skip: ''
@@ -49,6 +50,7 @@ const FIELD_ICONS = {
 const FIELD_LABELS = {
   amount: 'Сумма',
   description: 'Описание',
+  city: 'Город',
   expense_date: 'Дата',
   notes: 'Примечания',
   skip: 'Пропустить'
@@ -57,6 +59,7 @@ const FIELD_LABELS = {
 const FIELD_COLORS = {
   amount: 'bg-green-100 border-green-300 text-green-800',
   description: 'bg-blue-100 border-blue-300 text-blue-800',
+  city: 'bg-indigo-100 border-indigo-300 text-indigo-800',
   expense_date: 'bg-purple-100 border-purple-300 text-purple-800',
   notes: 'bg-yellow-100 border-yellow-300 text-yellow-800',
   skip: 'bg-gray-100 border-gray-300 text-gray-600'
@@ -96,6 +99,7 @@ export function ColumnMappingModal({
       const newFieldAssignments: FieldAssignment[] = [
         { field: 'amount' as const, assignedColumn: null, required: true },
         { field: 'description' as const, assignedColumn: null, required: true },
+        { field: 'city' as const, assignedColumn: null, required: false },
         { field: 'expense_date' as const, assignedColumn: null, required: false },
         { field: 'notes' as const, assignedColumn: null, required: false }
       ]
@@ -103,7 +107,7 @@ export function ColumnMappingModal({
       // Восстанавливаем назначения из сохраненной схемы
       savedMapping.forEach((column, index) => {
         if (column.targetField !== 'skip') {
-          const targetField = column.targetField as 'amount' | 'description' | 'expense_date' | 'notes'
+          const targetField = column.targetField as 'amount' | 'description' | 'city' | 'expense_date' | 'notes'
           const fieldAssignment = newFieldAssignments.find(f => f.field === targetField)
           if (fieldAssignment) {
             fieldAssignment.assignedColumn = index as number
@@ -117,6 +121,7 @@ export function ColumnMappingModal({
       setFieldAssignments([
         { field: 'amount', assignedColumn: null, required: true },
         { field: 'description', assignedColumn: null, required: true },
+        { field: 'city', assignedColumn: null, required: false },
         { field: 'expense_date', assignedColumn: null, required: false },
         { field: 'notes', assignedColumn: null, required: false }
       ])
@@ -124,7 +129,7 @@ export function ColumnMappingModal({
   }, [sampleData, savedMapping])
 
   // Назначение поля на столбец с предотвращением дублирования
-  const assignFieldToColumn = useCallback((field: 'amount' | 'description' | 'expense_date' | 'notes', columnIndex: number | null) => {
+  const assignFieldToColumn = useCallback((field: 'amount' | 'description' | 'city' | 'expense_date' | 'notes', columnIndex: number | null) => {
     setFieldAssignments(prev => prev.map(assignment => {
       // Если назначаем новое поле на столбец, убираем старое назначение с этого столбца
       if (assignment.assignedColumn === columnIndex && assignment.field !== field) {
@@ -217,6 +222,7 @@ export function ColumnMappingModal({
 
     const amountField = fieldAssignments.find(f => f.field === 'amount')
     const descriptionField = fieldAssignments.find(f => f.field === 'description')
+    const cityField = fieldAssignments.find(f => f.field === 'city')
     const dateField = fieldAssignments.find(f => f.field === 'expense_date')
     const notesField = fieldAssignments.find(f => f.field === 'notes')
 
@@ -237,13 +243,15 @@ export function ColumnMappingModal({
 
     // Теперь используем новые индексы для получения данных
     return reorderedData.map(row => ({
-      amount: amountField && amountField.assignedColumn !== null && amountField.assignedColumn !== undefined ? 
+      amount: amountField && amountField.assignedColumn !== null && amountField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(amountField.assignedColumn)] || '' : '',
-      description: descriptionField && descriptionField.assignedColumn !== null && descriptionField.assignedColumn !== undefined ? 
+      description: descriptionField && descriptionField.assignedColumn !== null && descriptionField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(descriptionField.assignedColumn)] || '' : '',
-      expense_date: dateField && dateField.assignedColumn !== null && dateField.assignedColumn !== undefined ? 
+      city: cityField && cityField.assignedColumn !== null && cityField.assignedColumn !== undefined ?
+        row[columnOrder.indexOf(cityField.assignedColumn)] || '' : '',
+      expense_date: dateField && dateField.assignedColumn !== null && dateField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(dateField.assignedColumn)] || '' : '',
-      notes: notesField && notesField.assignedColumn !== null && notesField.assignedColumn !== undefined ? 
+      notes: notesField && notesField.assignedColumn !== null && notesField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(notesField.assignedColumn)] || '' : ''
     }))
   }, [sampleData, fieldAssignments, columnOrder, isEditingMode])
@@ -258,6 +266,7 @@ export function ColumnMappingModal({
     setFieldAssignments([
       { field: 'amount', assignedColumn: null, required: true },
       { field: 'description', assignedColumn: null, required: true },
+      { field: 'city', assignedColumn: null, required: false },
       { field: 'expense_date', assignedColumn: null, required: false },
       { field: 'notes', assignedColumn: null, required: false }
     ])
@@ -333,11 +342,11 @@ export function ColumnMappingModal({
                           <select
                             value={assignedField}
                             onChange={(e) => {
-                              const newField = e.target.value as 'amount' | 'description' | 'expense_date' | 'notes' | 'skip'
+                              const newField = e.target.value as 'amount' | 'description' | 'city' | 'expense_date' | 'notes' | 'skip'
                               if (newField === 'skip') {
                                 // Убираем назначение
-                                setFieldAssignments(prev => prev.map(assignment => 
-                                  assignment.assignedColumn === originalIndex 
+                                setFieldAssignments(prev => prev.map(assignment =>
+                                  assignment.assignedColumn === originalIndex
                                     ? { ...assignment, assignedColumn: null }
                                     : assignment
                                 ))
@@ -359,6 +368,7 @@ export function ColumnMappingModal({
                             <option value="skip">{String.fromCharCode(65 + displayIndex)}</option>
                             <option value="amount">💰 Сумма</option>
                             <option value="description">📝 Описание</option>
+                            <option value="city">📍 Город</option>
                             <option value="expense_date">📅 Дата</option>
                             <option value="notes">📋 Примечания</option>
                           </select>
@@ -407,6 +417,7 @@ export function ColumnMappingModal({
                     <tr>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">💰 Сумма</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📝 Описание</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📍 Город</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📅 Дата</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📋 Примечания</th>
                     </tr>
@@ -419,6 +430,9 @@ export function ColumnMappingModal({
                         </td>
                         <td className="px-4 py-3 text-blue-700 whitespace-nowrap">
                           {row.description || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-indigo-700 whitespace-nowrap">
+                          {row.city || '—'}
                         </td>
                         <td className="px-4 py-3 text-purple-700 whitespace-nowrap">
                           {row.expense_date || '—'}

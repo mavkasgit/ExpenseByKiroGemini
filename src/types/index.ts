@@ -577,7 +577,7 @@ export type ExpenseInputMethod = 'single' | 'bulk_table'
 // Column mapping types
 export interface ColumnMapping {
   sourceIndex: number
-  targetField: 'amount' | 'description' | 'expense_date' | 'expense_time' | 'notes' | 'skip'
+  targetField: 'amount' | 'description' | 'city' | 'expense_date' | 'expense_time' | 'notes' | 'skip'
   enabled: boolean
   preview: string
 }

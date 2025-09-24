@@ -213,6 +213,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             newExpenses.push({
               amount: 0,
               description: row[0],
+              city: '',
               notes: '',
               category_id: '',
               expense_date: getCurrentDateISO(),
@@ -269,6 +270,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             case 'description':
               expenseData.description = cellValue
               break
+            case 'city':
+              expenseData.city = cellValue
+              break
             case 'expense_date':
               const dateTimeResult1 = parseDateAndTime(cellValue)
               expenseData.expense_date = dateTimeResult1.date
@@ -285,14 +289,13 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           // Извлекаем город из описания и очищаем описание
           let cleanDescription = expenseData.description
           let notes = expenseData.notes || ''
-          
+          let detectedCity: string | null = null
+
           const cityParseResult = extractCityFromDescription(expenseData.description)
           if (cityParseResult.confidence > 0.6) {
             cleanDescription = cityParseResult.cleanDescription
-            if (cityParseResult.city) {
-              const cityLabel = cityParseResult.displayCity || cityParseResult.city
-              const cityNote = `Город: ${cityLabel}`
-              notes = notes ? `${notes}\n${cityNote}` : cityNote
+            if (!expenseData.city && cityParseResult.city) {
+              detectedCity = cityParseResult.displayCity || cityParseResult.city
             }
           }
 
@@ -303,6 +306,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             category_id: '',
             expense_date: expenseData.expense_date || getCurrentDateISO(),
             expense_time: expenseData.expense_time || null,
+            city: expenseData.city?.trim() || detectedCity || '',
             tempId: expenseData.tempId!
           })
         }
@@ -352,6 +356,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             case 'description':
               expenseData.description = cellValue
               break
+            case 'city':
+              expenseData.city = cellValue
+              break
             case 'expense_date':
               const dateTimeResult2 = parseDateAndTime(cellValue)
               expenseData.expense_date = dateTimeResult2.date
@@ -368,14 +375,13 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           // Извлекаем город из описания и очищаем описание
           let cleanDescription = expenseData.description
           let notes = expenseData.notes || ''
-          
+          let detectedCity: string | null = null
+
           const cityParseResult = extractCityFromDescription(expenseData.description)
           if (cityParseResult.confidence > 0.6) {
             cleanDescription = cityParseResult.cleanDescription
-            if (cityParseResult.city) {
-              const cityLabel = cityParseResult.displayCity || cityParseResult.city
-              const cityNote = `Город: ${cityLabel}`
-              notes = notes ? `${notes}\n${cityNote}` : cityNote
+            if (!expenseData.city && cityParseResult.city) {
+              detectedCity = cityParseResult.displayCity || cityParseResult.city
             }
           }
 
@@ -386,6 +392,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             category_id: '',
             expense_date: expenseData.expense_date || getCurrentDateISO(),
             expense_time: expenseData.expense_time || null,
+            city: expenseData.city?.trim() || detectedCity || '',
             tempId: expenseData.tempId!
           })
         }
@@ -404,6 +411,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         category_id: expense.category_id || undefined,
         expense_date: expense.expense_date,
         expense_time: expense.expense_time || null,
+        city_input: expense.city?.trim() || undefined,
         input_method: 'bulk_table' as const
       }))
 
@@ -547,6 +555,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               newExpenses.push({
                 amount: 0,
                 description: row[0],
+                city: '',
                 notes: '',
                 category_id: '',
                 expense_date: getCurrentDateISO(),
@@ -594,6 +603,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         category_id: expense.category_id || undefined,
         expense_date: expense.expense_date,
         expense_time: expense.expense_time || null,
+        city_input: expense.city?.trim() || undefined,
         input_method: 'bulk_table' as const
       }))
 
