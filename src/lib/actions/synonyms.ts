@@ -21,6 +21,88 @@ import type { KeywordSynonym, CitySynonym, City } from '@/types';
 type Coordinates = { lat: number; lon: number };
 
 type CitySynonymWithCity = CitySynonym & { city: Pick<City, 'id' | 'name' | 'coordinates'> | null };
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerClient>>;
+type UnrecognizedNameStat = { name: string; count: number };
+
+function aggregateUnrecognizedCityNames(
+  expenses: Array<{ raw_city_input: string | null }>,
+  fallbackName: string
+): UnrecognizedNameStat[] {
+  const normalizedFallback = fallbackName.trim();
+  const accumulator = new Map<string, UnrecognizedNameStat>();
+
+  for (const record of expenses) {
+    const candidate = typeof record.raw_city_input === 'string' ? record.raw_city_input.trim() : '';
+    const effectiveName = candidate || normalizedFallback;
+
+    if (!effectiveName) {
+      continue;
+    }
+
+    const key = effectiveName.toLocaleLowerCase('ru');
+    const existing = accumulator.get(key);
+
+    if (existing) {
+      existing.count += 1;
+    } else {
+      accumulator.set(key, { name: effectiveName, count: 1 });
+    }
+  }
+
+  if (accumulator.size === 0 && normalizedFallback) {
+    accumulator.set(normalizedFallback.toLocaleLowerCase('ru'), {
+      name: normalizedFallback,
+      count: expenses.length > 0 ? expenses.length : 1
+    });
+  }
+
+  return Array.from(accumulator.values());
+}
+
+async function rememberUnrecognizedCity(
+  client: SupabaseServerClient,
+  userId: string,
+  name: string,
+  occurrences: number,
+  timestamp: string,
+  context: string
+) {
+  const normalized = name.trim();
+  if (!normalized || occurrences <= 0) {
+    return;
+  }
+
+  try {
+    const { data: existing } = await client
+      .from('unrecognized_cities')
+      .select('id, frequency')
+      .eq('user_id', userId)
+      .ilike('name', normalized)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await client
+        .from('unrecognized_cities')
+        .update({
+          frequency: (existing.frequency ?? 0) + occurrences,
+          last_seen: timestamp
+        })
+        .eq('id', existing.id);
+    } else {
+      await client
+        .from('unrecognized_cities')
+        .insert({
+          user_id: userId,
+          name: normalized,
+          frequency: occurrences,
+          first_seen: timestamp,
+          last_seen: timestamp
+        });
+    }
+  } catch (error) {
+    console.error(`Не удалось сохранить непознанный город при ${context}:`, error);
+  }
+}
 
 const geocoderApiKey =
   process.env.YANDEX_GEOCODER_API_KEY ?? process.env.NEXT_PUBLIC_YANDEX_GEOCODER_API_KEY ?? null;
@@ -302,6 +384,17 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
       return { error: 'Некорректный идентификатор записи синонима' };
     }
 
+    const { data: synonymRecord, error: synonymLoadError } = await supabase
+      .from('city_synonyms')
+      .select('id, city_id, synonym, city:cities(name)')
+      .eq('id', recordId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (synonymLoadError || !synonymRecord) {
+      return { error: 'Синоним города не найден' };
+    }
+
     const { error } = await supabase
       .from('city_synonyms')
       .delete()
@@ -311,6 +404,53 @@ export async function deleteCitySynonym(data: DeleteCitySynonymData) {
     if (error) {
       console.error('Ошибка удаления синонима города:', error);
       return { error: 'Не удалось удалить синоним города' };
+    }
+
+    const trimmedSynonym = synonymRecord.synonym.trim();
+
+    if (trimmedSynonym) {
+      const { data: affectedExpenses, error: loadExpensesError } = await supabase
+        .from('expenses')
+        .select('raw_city_input')
+        .eq('user_id', user.id)
+        .eq('city_id', synonymRecord.city_id)
+        .filter('raw_city_input', 'ilike', trimmedSynonym);
+
+      if (loadExpensesError) {
+        console.error('Ошибка получения расходов для удаленного синонима города:', loadExpensesError);
+        return { error: 'Синоним удален, но не удалось обновить связанные расходы' };
+      }
+
+      if (affectedExpenses && affectedExpenses.length > 0) {
+        const now = new Date().toISOString();
+        const fallbackName = trimmedSynonym || (synonymRecord.city?.name?.trim() ?? '');
+        const aggregated = aggregateUnrecognizedCityNames(affectedExpenses, fallbackName);
+
+        const { error: updateExpensesError } = await supabase
+          .from('expenses')
+          .update({ city_id: null, updated_at: now })
+          .eq('user_id', user.id)
+          .eq('city_id', synonymRecord.city_id)
+          .filter('raw_city_input', 'ilike', trimmedSynonym);
+
+        if (updateExpensesError) {
+          console.error('Ошибка обновления расходов после удаления синонима города:', updateExpensesError);
+          return { error: 'Синоним удален, но не удалось обновить связанные расходы' };
+        }
+
+        await Promise.all(
+          aggregated.map((entry) =>
+            rememberUnrecognizedCity(
+              supabase,
+              user.id,
+              entry.name,
+              entry.count,
+              now,
+              'удалении синонима города'
+            )
+          )
+        );
+      }
     }
 
     revalidatePath('/settings');
@@ -335,13 +475,79 @@ export async function deleteCity(data: DeleteCityData) {
 
     const { data: existingCity, error: existingError } = await supabase
       .from('cities')
-      .select('id')
+      .select('id, name')
       .eq('id', validated.id)
       .eq('user_id', user.id)
       .single();
 
     if (existingError || !existingCity) {
       return { error: 'Город не найден' };
+    }
+
+    const { data: linkedExpenses, error: linkedExpensesError } = await supabase
+      .from('expenses')
+      .select('raw_city_input')
+      .eq('city_id', validated.id)
+      .eq('user_id', user.id);
+
+    if (linkedExpensesError) {
+      console.error('Ошибка загрузки расходов привязанных к городу:', linkedExpensesError);
+      return { error: 'Не удалось обработать связанные с городом расходы' };
+    }
+
+    if (linkedExpenses && linkedExpenses.length > 0) {
+      const now = new Date().toISOString();
+      const cityName = existingCity.name?.trim() ?? '';
+      const aggregated = aggregateUnrecognizedCityNames(linkedExpenses, cityName);
+
+      if (cityName) {
+        const { error: normalizeRawInputError } = await supabase
+          .from('expenses')
+          .update({ raw_city_input: cityName })
+          .eq('user_id', user.id)
+          .eq('city_id', validated.id)
+          .or('raw_city_input.is.null,raw_city_input.eq.');
+
+        if (normalizeRawInputError) {
+          console.error('Ошибка нормализации исходного названия города в расходах:', normalizeRawInputError);
+          return { error: 'Не удалось обновить расходы перед удалением города' };
+        }
+      }
+
+      const { error: resetExpensesError } = await supabase
+        .from('expenses')
+        .update({ city_id: null, updated_at: now })
+        .eq('user_id', user.id)
+        .eq('city_id', validated.id);
+
+      if (resetExpensesError) {
+        console.error('Ошибка сброса привязки города в расходах:', resetExpensesError);
+        return { error: 'Не удалось обновить расходы при удалении города' };
+      }
+
+      await Promise.all(
+        aggregated.map((entry) =>
+          rememberUnrecognizedCity(
+            supabase,
+            user.id,
+            entry.name,
+            entry.count,
+            now,
+            'удалении города'
+          )
+        )
+      );
+    }
+
+    const { error: deleteAliasesError } = await supabase
+      .from('city_aliases')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('city_id', validated.id);
+
+    if (deleteAliasesError) {
+      console.error('Ошибка удаления алиасов города:', deleteAliasesError);
+      return { error: 'Не удалось удалить связанные алиасы города' };
     }
 
     const { error: deleteSynonymsError } = await supabase
