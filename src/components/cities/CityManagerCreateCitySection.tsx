@@ -63,6 +63,7 @@ export function CityManagerCreateCitySection({
               onChange={(event) => onCityChange(event.target.value)}
               disabled={isSubmitting}
               className="h-11 pl-12"
+              autoComplete="new-password"
             />
             <MarkerPresetPicker
               value={selectedMarkerPreset}
@@ -165,6 +166,7 @@ export function CityManagerCreateCitySection({
                 onBlur={onManualBlur}
                 inputMode="decimal"
                 placeholder="Например: 30.3141"
+                autoComplete="new-password"
               />
             </div>
           </div>

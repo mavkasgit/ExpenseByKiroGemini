@@ -8,6 +8,8 @@ import { normaliseMarkerPreset } from '@/lib/utils/cityCoordinates';
 import type { CityCoordinates } from '@/lib/utils/cityCoordinates';
 import { AddSynonymForm } from '@/components/settings/AddSynonymForm';
 import type { CityGroup, CitySynonymRecord } from './cityManagerTypes';
+import { InlineEdit } from '@/components/ui/InlineEdit';
+import { IconMap } from '@/components/ui/IconMap';
 
 interface CityManagerSynonymListSectionProps {
   searchTerm: string;
@@ -19,7 +21,7 @@ interface CityManagerSynonymListSectionProps {
   isSubmitting: boolean;
   onDeleteSynonym: (synonym: CitySynonymRecord) => void;
   onCityNameClick: (group: CityGroup) => void;
-  onEditCity: (event: React.MouseEvent, city: { id: string; name: string }) => void;
+  onUpdateCityName: (cityId: string, newName: string) => Promise<void> | void;
   onDeleteCity: (event: React.MouseEvent, city: { id: string; name: string }) => void;
   onMarkerPresetChange: (cityId: string, value: string) => void;
   markerUpdatingMap: Record<string, boolean>;
@@ -37,7 +39,7 @@ export function CityManagerSynonymListSection({
   isSubmitting,
   onDeleteSynonym,
   onCityNameClick,
-  onEditCity,
+  onUpdateCityName,
   onDeleteCity,
   onMarkerPresetChange,
   markerUpdatingMap,
@@ -59,6 +61,7 @@ export function CityManagerSynonymListSection({
             onKeyDown={onSearchKeyDown}
             className="pl-9"
             type="search"
+            autoComplete="new-password"
           />
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">🔍</span>
         </div>
@@ -103,36 +106,27 @@ export function CityManagerSynonymListSection({
                           <span className="sr-only">{coordinatesHint}</span>
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onCityNameClick(group)}
-                        className="rounded px-1 text-left text-sm font-medium text-slate-900 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                      >
-                        {canonicalName}
-                        <span className="ml-2 text-xs font-normal text-slate-500">
+                      <div className="flex items-center">
+                        <InlineEdit 
+                          value={canonicalName} 
+                          onSave={(newName) => onUpdateCityName(group.cityId, newName)} 
+                        />
+                        <span className="ml-1 text-xs font-normal text-slate-500">
                           ({formatCityCoordinates(group.coordinates ?? null)})
                         </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => onCityNameClick(group)}
+                          className="rounded p-1 text-slate-500 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                          aria-label="Show on map"
+                        >
+                          <IconMap className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500">
-                      {synonymsForCity.length > 0
-                        ? `Альтернативных написаний: ${synonymsForCity.length}`
-                        : 'Только основной вариант'}
-                    </p>
-                    {markerLabel && (
-                      <p className="text-xs text-slate-400">Маркер: {markerLabel}</p>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(event) => group.cityId && onEditCity(event, { id: group.cityId, name: canonicalName })}
-                    disabled={!group.cityId}
-                  >
-                    Редактировать
-                  </Button>
                   <Button
                     variant="danger"
                     size="sm"
@@ -165,9 +159,7 @@ export function CityManagerSynonymListSection({
                       </span>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-500">Добавьте варианты написания, которые встречаются в отчетах.</p>
-                )}
+                ) : null}
 
                 <AddSynonymForm cityId={group.cityId} cityName={canonicalName} onSynonymAdded={onSynonymAdded} />
               </div>

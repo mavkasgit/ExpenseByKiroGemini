@@ -9,7 +9,6 @@ import {
   CardTitle,
   Button,
   Input,
-  Modal,
   ConfirmationModal,
 } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
@@ -44,8 +43,6 @@ export function CityManager() {
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [cityToDelete, setCityToDelete] = useState<{ id: string; name: string } | null>(null)
-  const [cityToEdit, setCityToEdit] = useState<{ id: string; name: string } | null>(null)
-  const [newCityName, setNewCityName] = useState('')
   const [unrecognizedCities, setUnrecognizedCities] = useState<UnrecognizedCity[]>([])
   const [isLoadingUnrecognized, setIsLoadingUnrecognized] = useState(false)
   const [selectedUnrecognizedCityId, setSelectedUnrecognizedCityId] = useState<string | null>(null)
@@ -723,49 +720,34 @@ export function CityManager() {
     }
   };
 
-  const handleEditClick = (e: React.MouseEvent, city: { id: string; name: string }) => {
-    e.stopPropagation();
-    setCityToEdit(city);
-    setNewCityName(city.name);
-  };
-
-  const handleConfirmEdit = async () => {
-    if (!cityToEdit || !newCityName.trim() || cityToEdit.name === newCityName.trim()) {
-      setCityToEdit(null);
+  const handleUpdateCityName = async (cityId: string, newName: string) => {
+    const originalCity = groupedSynonyms.find(g => g.cityId === cityId);
+    if (!originalCity || originalCity.cityName === newName) {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const result = await updateCityName({ id: cityToEdit.id, newCityName: newCityName.trim() });
-      if (result.error) {
-        showToast(result.error, 'error');
-      } else {
-        const trimmedName = newCityName.trim();
-        setSynonyms(prev => {
-          const updated = prev.map(s => {
-            if (s.cityId !== cityToEdit.id) {
-              return s;
-            }
-            const isCanonical = s.synonym.trim().toLowerCase() === cityToEdit.name.trim().toLowerCase();
-            return {
-              ...s,
-              cityName: trimmedName,
-              synonym: isCanonical ? trimmedName : s.synonym
-            };
-          });
-          syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
-          return updated;
+    const result = await updateCityName({ id: cityId, newCityName: newName });
+
+    if (result.error) {
+      showToast(result.error, 'error');
+      // Optionally revert UI change here if needed
+    } else {
+      setSynonyms(prev => {
+        const updated = prev.map(s => {
+          if (s.cityId !== cityId) {
+            return s;
+          }
+          const isCanonical = s.synonym.trim().toLowerCase() === originalCity.cityName.trim().toLowerCase();
+          return {
+            ...s,
+            cityName: newName,
+            synonym: isCanonical ? newName : s.synonym
+          };
         });
-        showToast('Название города обновлено', 'success');
-      }
-    } catch (error) {
-      console.error('Failed to edit city', error);
-      showToast('Не удалось изменить город', 'error');
-    } finally {
-      setIsSubmitting(false);
-      setCityToEdit(null);
-      setNewCityName('');
+        syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
+        return updated;
+      });
+      showToast('Название города обновлено', 'success');
     }
   };
 
@@ -846,7 +828,7 @@ export function CityManager() {
                 isSubmitting={isSubmitting}
                 onDeleteSynonym={handleDeleteSynonym}
                 onCityNameClick={handleCityNameClick}
-                onEditCity={handleEditClick}
+                onUpdateCityName={handleUpdateCityName}
                 onDeleteCity={handleDeleteClick}
                 onMarkerPresetChange={handleMarkerPresetChange}
                 markerUpdatingMap={markerUpdatingMap}
@@ -881,19 +863,6 @@ export function CityManager() {
         confirmText="Удалить"
         isLoading={isSubmitting}
       />
-      <Modal isOpen={!!cityToEdit} onClose={() => setCityToEdit(null)} title={`Редактировать город ${cityToEdit?.name}`}>
-        <div className="space-y-4 p-6">
-          <Input
-            value={newCityName}
-            onChange={(e) => setNewCityName(e.target.value)}
-            placeholder="Новое название города"
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setCityToEdit(null)}>Отмена</Button>
-            <Button onClick={handleConfirmEdit} isLoading={isSubmitting}>Сохранить</Button>
-          </div>
-        </div>
-      </Modal>
     </>
   )
 }

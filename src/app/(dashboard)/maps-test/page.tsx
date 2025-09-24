@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/hooks/useToast';
+import { IconMap } from '@/components/ui/IconMap';
 
 // Тип для состояния карты
 interface MapState {
@@ -96,6 +97,13 @@ export default function MapsTestPage() {
             <Button onClick={handleSearch} isLoading={isLoading}>
               {isLoading ? 'Поиск...' : 'Найти город'}
             </Button>
+          </div>
+
+          <div className="pt-4">
+            <CardDescription className="mb-2">Новые иконки:</CardDescription>
+            <div className="flex items-center space-x-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
+              <IconMap className="w-8 h-8 text-gray-600 dark:text-gray-300" />
+            </div>
           </div>
 
           <div className="h-[500px] w-full bg-gray-200 rounded-lg overflow-hidden">
