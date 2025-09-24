@@ -13,7 +13,7 @@ import {
 } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { getCitySynonyms, createCitySynonym, deleteCitySynonym, deleteCity, updateCityName } from '@/lib/actions/synonyms';
-import { updateCityCoordinates } from '@/lib/actions/cities';
+import { toggleCityFavorite, updateCityCoordinates } from '@/lib/actions/cities';
 import { attachUnrecognizedCity, getUnrecognizedCities, resolveUnrecognizedCity } from '@/lib/actions/unrecognizedCities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser';
 import type { CitySynonymWithCity, UnrecognizedCity } from '@/types';
@@ -54,6 +54,7 @@ export function CityManager() {
     return preset?.label ?? 'Стандартный маркер'
   }, [selectedMarkerPreset])
   const [markerUpdatingMap, setMarkerUpdatingMap] = useState<Record<string, boolean>>({})
+  const [favoriteUpdatingCityId, setFavoriteUpdatingCityId] = useState<string | null>(null)
   const { showToast } = useToast()
   const [mapState, setMapState] = useState<MapState>(() => createDefaultMapState())
   const [selectedCoordinates, setSelectedCoordinates] = useState<CityCoordinates | null>(null)
@@ -234,7 +235,8 @@ export function CityManager() {
               cityId,
               cityName,
               synonym: record.synonym,
-              coordinates
+              coordinates,
+              isFavorite: Boolean(record.city?.is_favorite)
             } as CitySynonymRecord;
           })
           .filter((record): record is CitySynonymRecord => record !== null)
@@ -304,7 +306,8 @@ export function CityManager() {
           cityId: groupKey,
           cityName: record.cityName,
           entries: [],
-          coordinates: record.coordinates
+          coordinates: record.coordinates,
+          isFavorite: record.isFavorite
         })
       }
       const group = map.get(groupKey)!
@@ -315,9 +318,17 @@ export function CityManager() {
       if (!group.coordinates && record.coordinates) {
         group.coordinates = record.coordinates
       }
+      if (group.isFavorite !== record.isFavorite) {
+        group.isFavorite = record.isFavorite
+      }
     })
 
-    return Array.from(map.values()).sort((a, b) => a.cityName.localeCompare(b.cityName, 'ru'))
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) {
+        return a.isFavorite ? -1 : 1
+      }
+      return a.cityName.localeCompare(b.cityName, 'ru')
+    })
   }, [synonyms])
 
   const filteredGroupedSynonyms = useMemo(() => {
@@ -638,7 +649,8 @@ export function CityManager() {
                 effectiveCoordinates ??
                 (serverCoordinates
                   ? { ...serverCoordinates, markerPreset: normaliseMarkerPreset(serverCoordinates.markerPreset) }
-                  : null)
+                  : null),
+              isFavorite: false
             }
             const updated = [...prev, newRecord]
             syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
@@ -694,6 +706,44 @@ export function CityManager() {
     e.stopPropagation();
     setCityToDelete(city);
   };
+
+  const handleToggleFavoriteCity = useCallback(async (cityId: string, nextFavorite?: boolean) => {
+    const group = groupedSynonyms.find(item => item.cityId === cityId)
+    if (!group) {
+      return
+    }
+
+    setFavoriteUpdatingCityId(cityId)
+    const nextFavoriteState = typeof nextFavorite === 'boolean' ? nextFavorite : !group.isFavorite
+
+    try {
+      const result = await toggleCityFavorite({ id: cityId, isFavorite: nextFavoriteState })
+      if (result?.error) {
+        showToast(result.error, 'error')
+        return
+      }
+
+      setSynonyms(prev => {
+        const updated = prev.map(record =>
+          record.cityId === cityId ? { ...record, isFavorite: nextFavoriteState } : record
+        )
+        syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
+        return updated
+      })
+
+      showToast(
+        nextFavoriteState
+          ? `Город «${group.cityName}» добавлен в избранные`
+          : `Город «${group.cityName}» убран из избранных`,
+        'success'
+      )
+    } catch (error) {
+      console.error('Failed to toggle city favorite', error)
+      showToast('Не удалось обновить статус избранного города', 'error')
+    } finally {
+      setFavoriteUpdatingCityId(null)
+    }
+  }, [groupedSynonyms, showToast])
 
   const handleConfirmDelete = async () => {
     if (!cityToDelete) return;
@@ -834,6 +884,8 @@ export function CityManager() {
                 markerUpdatingMap={markerUpdatingMap}
                 formatCityCoordinates={formatCityCoordinates}
                 onSynonymAdded={loadSynonyms}
+                onToggleFavoriteCity={handleToggleFavoriteCity}
+                favoriteUpdatingCityId={favoriteUpdatingCityId}
               />
             </CardContent>
           </Card>

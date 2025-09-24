@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -9,6 +9,9 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import { TimeInput, TimeInputRef } from '@/components/ui/TimeInput'
 import type { Category } from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
+import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
+import { cn } from '@/lib/utils'
+import type { CityOption } from '@/lib/utils/cityOptions'
 
 interface BulkExpenseTableProps {
   expenses: BulkExpenseRowData[]
@@ -17,6 +20,219 @@ interface BulkExpenseTableProps {
   onUpdateRow: (tempId: string, field: keyof BulkExpenseRowData, value: any) => void
   onRemoveRow: (tempId: string) => void
   onPaste: (event: React.ClipboardEvent) => void
+  cityOptions: CityOption[]
+  cityLookupById: Map<string, CityOption>
+  resolveCityByInput: (value: string) => CityOption | null
+}
+
+interface CityCellProps {
+  value: string
+  cityId: string | null | undefined
+  disabled: boolean
+  error?: string
+  onValueChange: (value: string) => void
+  onCityIdChange: (cityId: string | null) => void
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void
+  onFocus: () => void
+  cityOptions: CityOption[]
+  cityLookupById: Map<string, CityOption>
+  resolveCityByInput: (value: string) => CityOption | null
+}
+
+function CityCell({
+  value,
+  cityId,
+  disabled,
+  error,
+  onValueChange,
+  onCityIdChange,
+  onKeyDown,
+  onFocus,
+  cityOptions,
+  cityLookupById,
+  resolveCityByInput
+}: CityCellProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const dropdownTimeoutRef = useRef<number | null>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+
+  const resolvedCity = useMemo(() => {
+    if (cityId) {
+      return cityLookupById.get(cityId) ?? null
+    }
+
+    if (value) {
+      return resolveCityByInput(value)
+    }
+
+    return null
+  }, [cityId, cityLookupById, resolveCityByInput, value])
+
+  const filteredCityOptions = useMemo(() => {
+    const query = value.trim().toLowerCase()
+    const base = query
+      ? cityOptions.filter((option) =>
+          option.cityName.toLowerCase().includes(query) ||
+          option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
+        )
+      : cityOptions
+
+    return base.slice(0, 6)
+  }, [cityOptions, value])
+
+  useEffect(() => {
+    setHighlightedIndex(0)
+  }, [filteredCityOptions])
+
+  useEffect(() => () => {
+    if (dropdownTimeoutRef.current) {
+      window.clearTimeout(dropdownTimeoutRef.current)
+    }
+  }, [])
+
+  const handleChange = (nextValue: string) => {
+    const match = resolveCityByInput(nextValue)
+    onValueChange(nextValue)
+    onCityIdChange(match?.cityId ?? null)
+    setIsOpen(Boolean(nextValue))
+    setHighlightedIndex(0)
+  }
+
+  const handleSelect = (option: CityOption) => {
+    onValueChange(option.cityName)
+    onCityIdChange(option.cityId)
+    setIsOpen(false)
+  }
+
+  const handleFocus = () => {
+    if (dropdownTimeoutRef.current) {
+      window.clearTimeout(dropdownTimeoutRef.current)
+      dropdownTimeoutRef.current = null
+    }
+    onFocus()
+    setIsOpen(true)
+  }
+
+  const handleBlur = () => {
+    dropdownTimeoutRef.current = window.setTimeout(() => {
+      setIsOpen(false)
+    }, 120)
+  }
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (!isOpen) {
+        setIsOpen(true)
+        setHighlightedIndex(0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedIndex((prev) => (prev + 1) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!isOpen) {
+        setIsOpen(true)
+        setHighlightedIndex(filteredCityOptions.length > 0 ? filteredCityOptions.length - 1 : 0)
+        return
+      }
+      if (filteredCityOptions.length > 0) {
+        setHighlightedIndex((prev) => (prev - 1 + filteredCityOptions.length) % filteredCityOptions.length)
+      }
+      return
+    }
+
+    if (event.key === 'Enter') {
+      if (isOpen && filteredCityOptions[highlightedIndex]) {
+        event.preventDefault()
+        handleSelect(filteredCityOptions[highlightedIndex])
+        return
+      }
+    }
+
+    if (event.key === 'Escape') {
+      setIsOpen(false)
+      return
+    }
+
+    onKeyDown(event)
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={value || ''}
+          onChange={(event) => handleChange(event.target.value)}
+          onKeyDown={handleInputKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          disabled={disabled}
+          placeholder="Город"
+          maxLength={100}
+          className={cn(
+            'pl-16 text-sm',
+            error ? 'ring-red-300 focus:ring-red-500' : ''
+          )}
+        />
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <CityMarkerIcon
+            preset={resolvedCity?.markerPreset ?? undefined}
+            active={resolvedCity ? resolvedCity.hasCoordinates : false}
+          />
+        </div>
+        {resolvedCity?.isFavorite ? (
+          <span className="pointer-events-none absolute inset-y-0 left-8 z-20 flex items-center text-amber-400">★</span>
+        ) : null}
+        {isOpen && filteredCityOptions.length > 0 && (
+          <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+            <ul
+              className="max-h-48 overflow-auto py-1"
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              {filteredCityOptions.map((option, index) => (
+                <li key={option.cityId}>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
+                      highlightedIndex === index
+                        ? 'bg-sky-50 text-sky-700'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    )}
+                    onClick={() => handleSelect(option)}
+                  >
+                    <CityMarkerIcon
+                      preset={option.markerPreset ?? undefined}
+                      active={option.hasCoordinates}
+                    />
+                    <span className="flex-1 truncate">{option.cityName}</span>
+                    {option.isFavorite && <span className="text-amber-400">★</span>}
+                    {option.synonyms.length > 1 && (
+                      <span className="max-w-[140px] truncate text-[11px] text-slate-400">
+                        {option.synonyms
+                          .filter((synonym) => synonym !== option.cityName)
+                          .slice(0, 2)
+                          .join(', ')}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+      {error && <ErrorMessage error={error} />}
+    </div>
+  )
 }
 
 export function BulkExpenseTable({
@@ -25,7 +241,10 @@ export function BulkExpenseTable({
   validationErrors,
   onUpdateRow,
   onRemoveRow,
-  onPaste
+  onPaste,
+  cityOptions,
+  cityLookupById,
+  resolveCityByInput
 }: BulkExpenseTableProps) {
   const [editingCell, setEditingCell] = useState<string | null>(null)
 
@@ -193,20 +412,19 @@ export function BulkExpenseTable({
                       input?.focus()
                     }}
                   >
-                    <div className="space-y-1">
-                      <Input
-                        type="text"
-                        value={expense.city || ''}
-                        onChange={(e) => handleCellChange(tempId, 'city', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, tempId, 'city')}
-                        onFocus={() => setEditingCell(`${tempId}-city`)}
-                        className={`text-sm ${getCellError(tempId, 'city') ? 'border-red-500' : ''}`}
-                        placeholder="Город"
-                      />
-                      {getCellError(tempId, 'city') && (
-                        <ErrorMessage error={getCellError(tempId, 'city')} />
-                      )}
-                    </div>
+                    <CityCell
+                      value={expense.city ?? ''}
+                      cityId={expense.city_id ?? null}
+                      disabled={false}
+                      error={getCellError(tempId, 'city')}
+                      onValueChange={(nextValue) => handleCellChange(tempId, 'city', nextValue)}
+                      onCityIdChange={(nextCityId) => handleCellChange(tempId, 'city_id', nextCityId)}
+                      onKeyDown={(event) => handleKeyDown(event, tempId, 'city')}
+                      onFocus={() => setEditingCell(`${tempId}-city`)}
+                      cityOptions={cityOptions}
+                      cityLookupById={cityLookupById}
+                      resolveCityByInput={resolveCityByInput}
+                    />
                   </td>
 
                   {/* Дата */}

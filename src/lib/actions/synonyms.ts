@@ -230,7 +230,7 @@ export async function getCitySynonyms() {
 
     const { data, error } = await supabase
       .from('city_synonyms')
-      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates)')
+      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates, is_favorite)')
       .eq('user_id', user.id);
 
     if (error) {
@@ -273,7 +273,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
     if (cityId) {
       const { data: existingCity, error: cityError } = await supabase
         .from('cities')
-        .select('id, name, coordinates')
+        .select('id, name, coordinates, is_favorite')
         .eq('id', cityId)
         .eq('user_id', user.id)
         .single();
@@ -310,7 +310,7 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
           user_id: user.id,
           updated_at: timestamp
         })
-        .select('id, name, coordinates')
+        .select('id, name, coordinates, is_favorite')
         .single();
 
       if (createCityError || !newCity) {

@@ -103,7 +103,7 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
         error={errors.name}
         placeholder="Например: Продукты, Транспорт, Развлечения"
         required
-        autoComplete="off"
+        autoComplete="new-password"
       />
 
       <div>
@@ -129,7 +129,7 @@ export function CategoryForm({ category, onSuccess, onCancel }: CategoryFormProp
               value={iconSearch}
               onChange={e => setIconSearch(e.target.value)}
               className="mb-2"
-              autoComplete="off"
+              autoComplete="new-password"
             />
             <div className="grid grid-cols-7 gap-1">
               {filteredIcons.map(icon => (

@@ -27,6 +27,8 @@ interface CityManagerSynonymListSectionProps {
   markerUpdatingMap: Record<string, boolean>;
   formatCityCoordinates: (coords: CityCoordinates | null) => string;
   onSynonymAdded: () => Promise<void> | void;
+  onToggleFavoriteCity: (cityId: string, nextFavorite?: boolean) => Promise<void> | void;
+  favoriteUpdatingCityId: string | null;
 }
 
 export function CityManagerSynonymListSection({
@@ -45,6 +47,8 @@ export function CityManagerSynonymListSection({
   markerUpdatingMap,
   formatCityCoordinates,
   onSynonymAdded,
+  onToggleFavoriteCity,
+  favoriteUpdatingCityId,
 }: CityManagerSynonymListSectionProps) {
   return (
     <div className="space-y-3">
@@ -84,8 +88,9 @@ export function CityManagerSynonymListSection({
           );
           const hasCoordinates = Boolean(group.coordinates);
           const coordinatesHint = hasCoordinates ? 'Город отображается на карте' : 'Координаты не определены';
-          const markerLabel = markerPresetLookup.get(normaliseMarkerPreset(group.coordinates?.markerPreset))?.label;
           const isMarkerUpdating = Boolean(markerUpdatingMap[group.cityId]);
+          const isFavoriteUpdating = favoriteUpdatingCityId === group.cityId;
+          const nextFavoriteState = !group.isFavorite;
 
           return (
             <div key={group.cityId} className="rounded-lg border border-slate-200 bg-white">
@@ -122,6 +127,33 @@ export function CityManagerSynonymListSection({
                       aria-label="Show on map"
                     >
                       <IconMap className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleFavoriteCity(group.cityId, nextFavoriteState)}
+                      className="rounded p-1 text-slate-500 transition hover:text-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:cursor-not-allowed disabled:text-slate-300"
+                      aria-label={group.isFavorite ? 'Убрать город из избранных' : 'Добавить город в избранные'}
+                      aria-pressed={group.isFavorite}
+                      disabled={isSubmitting || isFavoriteUpdating}
+                      title={group.isFavorite ? 'Убрать город из избранных' : 'Добавить город в избранные'}
+                    >
+                      {isFavoriteUpdating ? (
+                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+                      ) : (
+                        <svg
+                          className={`h-5 w-5 ${group.isFavorite ? 'text-amber-500' : ''}`}
+                          viewBox="0 0 24 24"
+                          fill={group.isFavorite ? 'currentColor' : 'none'}
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <path
+                            d="M12 17.27l-5.18 3.05 1.58-5.73L3 9.24l5.91-.51L12 3.5l3.09 5.23 5.91.51-5.4 5.35 1.58 5.73z"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
                     </button>
                   </div>
 
