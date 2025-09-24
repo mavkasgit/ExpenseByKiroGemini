@@ -10,3 +10,10 @@ export const updateCityCoordinatesSchema = z.object({
 });
 
 export type UpdateCityCoordinatesData = z.infer<typeof updateCityCoordinatesSchema>;
+
+export const updateCityFavoriteSchema = z.object({
+  id: z.string().uuid(),
+  isFavorite: z.boolean(),
+});
+
+export type UpdateCityFavoriteData = z.infer<typeof updateCityFavoriteSchema>;

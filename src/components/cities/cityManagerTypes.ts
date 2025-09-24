@@ -6,6 +6,7 @@ export interface CitySynonymRecord {
   cityName: string;
   synonym: string;
   coordinates: CityCoordinates | null;
+  isFavorite: boolean;
 }
 
 export type CityGroup = {
@@ -13,6 +14,7 @@ export type CityGroup = {
   cityName: string;
   entries: CitySynonymRecord[];
   coordinates: CityCoordinates | null;
+  isFavorite: boolean;
 };
 
 export type CityGroupWithCoordinates = CityGroup & { coordinates: CityCoordinates };

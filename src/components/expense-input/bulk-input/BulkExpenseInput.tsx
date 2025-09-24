@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -18,6 +18,7 @@ import type { Category, CreateExpenseData, ColumnMapping } from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
 import type { TableInfo } from '@/lib/utils/bankStatementParsers'
 import { useCitySynonyms } from '@/hooks/useCitySynonyms'
+import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
 
 interface BulkExpenseInputProps {
   categories: Category[]
@@ -41,7 +42,23 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
-  useCitySynonyms()
+  const { synonyms: citySynonyms } = useCitySynonyms()
+
+  const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(
+    () => buildCityOptions(citySynonyms),
+    [citySynonyms]
+  )
+
+  const resolveCityByInput = useCallback(
+    (value: string): CityOption | null => {
+      const normalized = value.trim().toLowerCase()
+      if (!normalized) {
+        return null
+      }
+      return cityLookupBySynonym.get(normalized) ?? null
+    },
+    [cityLookupBySynonym]
+  )
 
   // Загрузка сохраненной схемы столбцов при инициализации
   const loadSavedColumnMapping = useCallback(() => {
@@ -110,6 +127,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       expense_date: getCurrentDateISO(),
       expense_time: '',
       city: '',
+      city_id: null,
       tempId: crypto.randomUUID()
     }
     setExpenses(prev => [...prev, newRow])
@@ -214,6 +232,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               amount: 0,
               description: row[0],
               city: '',
+              city_id: null,
               notes: '',
               category_id: '',
               expense_date: getCurrentDateISO(),
@@ -299,16 +318,17 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             }
           }
 
-          newExpenses.push({
-            amount: expenseData.amount,
-            description: cleanDescription,
-            notes,
-            category_id: '',
-            expense_date: expenseData.expense_date || getCurrentDateISO(),
-            expense_time: expenseData.expense_time || null,
-            city: expenseData.city?.trim() || detectedCity || '',
-            tempId: expenseData.tempId!
-          })
+        newExpenses.push({
+          amount: expenseData.amount,
+          description: cleanDescription,
+          notes,
+          category_id: '',
+          expense_date: expenseData.expense_date || getCurrentDateISO(),
+          expense_time: expenseData.expense_time || null,
+          city: expenseData.city?.trim() || detectedCity || '',
+          city_id: null,
+          tempId: expenseData.tempId!
+        })
         }
       })
 
@@ -385,16 +405,17 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             }
           }
 
-          newExpenses.push({
-            amount: expenseData.amount,
-            description: cleanDescription,
-            notes,
-            category_id: '',
-            expense_date: expenseData.expense_date || getCurrentDateISO(),
-            expense_time: expenseData.expense_time || null,
-            city: expenseData.city?.trim() || detectedCity || '',
-            tempId: expenseData.tempId!
-          })
+        newExpenses.push({
+          amount: expenseData.amount,
+          description: cleanDescription,
+          notes,
+          category_id: '',
+          expense_date: expenseData.expense_date || getCurrentDateISO(),
+          expense_time: expenseData.expense_time || null,
+          city: expenseData.city?.trim() || detectedCity || '',
+          city_id: null,
+          tempId: expenseData.tempId!
+        })
         }
       })
 
@@ -411,6 +432,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         category_id: expense.category_id || undefined,
         expense_date: expense.expense_date,
         expense_time: expense.expense_time || null,
+        city_id: expense.city_id || undefined,
         city_input: expense.city?.trim() || undefined,
         input_method: 'bulk_table' as const
       }))
@@ -556,6 +578,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                 amount: 0,
                 description: row[0],
                 city: '',
+                city_id: null,
                 notes: '',
                 category_id: '',
                 expense_date: getCurrentDateISO(),
@@ -603,6 +626,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         category_id: expense.category_id || undefined,
         expense_date: expense.expense_date,
         expense_time: expense.expense_time || null,
+        city_id: expense.city_id || undefined,
         city_input: expense.city?.trim() || undefined,
         input_method: 'bulk_table' as const
       }))
@@ -778,6 +802,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             onUpdateRow={updateRow}
             onRemoveRow={removeRow}
             onPaste={handlePaste}
+            cityOptions={cityOptions}
+            cityLookupById={cityLookupById}
+            resolveCityByInput={resolveCityByInput}
           />
         )}
 

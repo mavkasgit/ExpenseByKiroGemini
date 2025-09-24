@@ -39,7 +39,7 @@ function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSa
         value={name} 
         onChange={(e) => setName(e.target.value)} 
         placeholder="Название группы" 
-        autoComplete="off"
+        autoComplete="new-password"
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); onSave(group, name, icon, color); }
           if (e.key === 'Escape') { onCancel(); }
@@ -59,7 +59,7 @@ function EditGroupForm({ group, onSave, onCancel }: { group: CategoryGroup, onSa
               value={iconSearch}
               onChange={e => setIconSearch(e.target.value)}
               className="mb-2"
-              autoComplete="off"
+              autoComplete="new-password"
             />
             <div className="grid grid-cols-7 gap-1">
               {filteredIcons.map(i => <button key={i.key} type="button" onClick={() => setIcon(i.key)} className={`w-10 h-10 p-2 rounded-lg border-2 transition-all ${icon === i.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>{i.emoji}</button>)}

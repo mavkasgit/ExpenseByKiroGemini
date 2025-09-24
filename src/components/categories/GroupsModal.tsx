@@ -179,7 +179,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
               onChange={(e) => setNewGroupName(e.target.value)} 
               placeholder="Название новой группы" 
               required 
-              autoComplete="off"
+              autoComplete="new-password"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') { e.preventDefault(); handleCreateGroup(); }
                 if (e.key === 'Escape') { setIsCreating(false); }
@@ -199,7 +199,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
                     value={iconSearch}
                     onChange={e => setIconSearch(e.target.value)}
                     className="mb-2"
-                    autoComplete="off"
+                    autoComplete="new-password"
                   />
                   <div className="grid grid-cols-7 gap-1">
                     {filteredIcons.map(icon => (

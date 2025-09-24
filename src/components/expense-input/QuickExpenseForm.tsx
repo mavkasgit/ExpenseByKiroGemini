@@ -22,6 +22,7 @@ import { getUserSettings, UserSettings } from '@/lib/actions/settings'
 import { useCitySynonyms } from '@/hooks/useCitySynonyms'
 import { CityMarkerIcon } from '@/components/cities/CityMarkerIcon'
 import { normaliseMarkerPreset } from '@/lib/utils/cityCoordinates'
+import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
 import { cn } from '@/lib/utils'
 
 interface QuickExpenseFormProps {
@@ -53,72 +54,10 @@ export function QuickExpenseForm({
   const [userSettings, setUserSettings] = useState<UserSettings>({})
   const { synonyms: citySynonyms } = useCitySynonyms()
 
-  type CityOption = {
-    cityId: string
-    cityName: string
-    markerPreset: string | null
-    hasCoordinates: boolean
-    synonyms: string[]
-  }
-
-  const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(() => {
-    const byId = new Map<string, CityOption>()
-    const bySynonym = new Map<string, CityOption>()
-    const synonymsRegistry = new Map<string, Set<string>>()
-
-    citySynonyms.forEach((record) => {
-      const existing = byId.get(record.cityId)
-
-      const synonymsSet = (() => {
-        let set = synonymsRegistry.get(record.cityId)
-        if (!set) {
-          set = new Set<string>()
-          synonymsRegistry.set(record.cityId, set)
-        }
-        return set
-      })()
-
-      const baseOption: CityOption = existing ?? {
-        cityId: record.cityId,
-        cityName: record.cityName,
-        markerPreset: record.markerPreset,
-        hasCoordinates: record.hasCoordinates,
-        synonyms: [record.cityName]
-      }
-
-      if (!existing) {
-        byId.set(record.cityId, baseOption)
-        synonymsSet.add(record.cityName.trim().toLowerCase())
-      }
-
-      if (record.markerPreset && !baseOption.markerPreset) {
-        baseOption.markerPreset = record.markerPreset
-      }
-
-      if (record.hasCoordinates) {
-        baseOption.hasCoordinates = true
-      }
-
-      const synonymNormalized = record.synonym.trim().toLowerCase()
-      if (!synonymsSet.has(synonymNormalized)) {
-        baseOption.synonyms.push(record.synonym)
-        synonymsSet.add(synonymNormalized)
-      }
-
-      bySynonym.set(synonymNormalized, baseOption)
-      bySynonym.set(record.cityName.trim().toLowerCase(), baseOption)
-    })
-
-    const options = Array.from(byId.values()).sort((a, b) =>
-      a.cityName.localeCompare(b.cityName, 'ru')
-    )
-
-    return {
-      cityOptions: options,
-      cityLookupBySynonym: bySynonym,
-      cityLookupById: new Map(options.map((option) => [option.cityId, option] as const))
-    }
-  }, [citySynonyms])
+  const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(
+    () => buildCityOptions(citySynonyms),
+    [citySynonyms]
+  )
 
   const resolveCityByInput = useCallback((value: string): CityOption | null => {
     const normalized = value.trim().toLowerCase()
@@ -130,7 +69,6 @@ export function QuickExpenseForm({
 
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false)
   const [highlightedCityIndex, setHighlightedCityIndex] = useState(0)
-
   const resolvedCity = useMemo(() => {
     if (formData.cityId) {
       return cityLookupById.get(formData.cityId) ?? null
@@ -417,7 +355,7 @@ export function QuickExpenseForm({
               placeholder="Город"
               disabled={isPending}
               maxLength={100}
-              className="pl-10"
+              className="pl-16"
             />
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
               <CityMarkerIcon
@@ -425,6 +363,9 @@ export function QuickExpenseForm({
                 active={resolvedCity ? resolvedCity.hasCoordinates : false}
               />
             </div>
+          {resolvedCity?.isFavorite ? (
+            <span className="pointer-events-none absolute inset-y-0 left-8 z-20 flex items-center text-amber-400">★</span>
+          ) : null}
             {isCityDropdownOpen && filteredCityOptions.length > 0 && (
               <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
                 <ul
@@ -451,6 +392,9 @@ export function QuickExpenseForm({
                         >
                           <CityMarkerIcon preset={preset} active={option.hasCoordinates} />
                           <span className="flex-1 truncate">{option.cityName}</span>
+                          {option.isFavorite && (
+                            <span className="text-amber-400">★</span>
+                          )}
                           {secondaryLabels.length > 0 && (
                             <span className="max-w-[140px] truncate text-[11px] text-slate-400">
                               {secondaryLabels.join(', ')}
