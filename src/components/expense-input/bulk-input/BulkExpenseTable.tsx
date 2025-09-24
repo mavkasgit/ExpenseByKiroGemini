@@ -61,7 +61,7 @@ export function BulkExpenseTable({
       event.preventDefault()
 
       const currentIndex = expenses.findIndex(e => e.tempId === tempId)
-      const fields: (keyof BulkExpenseRowData)[] = ['amount', 'description', 'expense_date', 'expense_time', 'notes']
+      const fields: (keyof BulkExpenseRowData)[] = ['amount', 'description', 'city', 'expense_date', 'expense_time', 'notes']
       const currentFieldIndex = fields.indexOf(field)
 
       // Переход к следующему полю или следующей строке
@@ -103,6 +103,9 @@ export function BulkExpenseTable({
               </th>
               <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 min-w-48">
                 Описание *
+              </th>
+              <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 min-w-40">
+                Город
               </th>
               <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 w-32">
                 Дата *
@@ -178,6 +181,30 @@ export function BulkExpenseTable({
                       />
                       {getCellError(tempId, 'description') && (
                         <ErrorMessage error={getCellError(tempId, 'description')} />
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Город */}
+                  <td
+                    className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
+                    onClick={(e) => {
+                      const input = e.currentTarget.querySelector('input')
+                      input?.focus()
+                    }}
+                  >
+                    <div className="space-y-1">
+                      <Input
+                        type="text"
+                        value={expense.city || ''}
+                        onChange={(e) => handleCellChange(tempId, 'city', e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, tempId, 'city')}
+                        onFocus={() => setEditingCell(`${tempId}-city`)}
+                        className={`text-sm ${getCellError(tempId, 'city') ? 'border-red-500' : ''}`}
+                        placeholder="Город"
+                      />
+                      {getCellError(tempId, 'city') && (
+                        <ErrorMessage error={getCellError(tempId, 'city')} />
                       )}
                     </div>
                   </td>
