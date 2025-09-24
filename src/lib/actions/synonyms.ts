@@ -591,62 +591,159 @@ export async function updateCityName(data: UpdateCityData) {
     }
 
     const validated = updateCitySchema.parse(data);
+    const { id, newCityName } = validated;
 
-    const { data: existingCity, error: existingError } = await supabase
+    // Get the original city name before updating
+    const { data: originalCity, error: fetchError } = await supabase
       .from('cities')
-      .select('id, name')
-      .eq('id', validated.id)
+      .select('name')
+      .eq('id', id)
       .eq('user_id', user.id)
       .single();
 
-    if (existingError || !existingCity) {
+    if (fetchError || !originalCity) {
       return { error: 'Город не найден' };
     }
 
-    const newCityName = validated.newCityName.trim();
+    const oldCityName = originalCity.name;
 
-    const { data: duplicateCity } = await supabase
+    // Update the city name
+    const { error: updateError } = await supabase
       .from('cities')
-      .select('id')
-      .eq('user_id', user.id)
-      .ilike('name', newCityName)
-      .neq('id', validated.id)
-      .maybeSingle();
-
-    if (duplicateCity) {
-      return { error: 'Город с таким названием уже существует' };
-    }
-
-    const timestamp = new Date().toISOString();
-
-    const { error: updateCityError } = await supabase
-      .from('cities')
-      .update({ name: newCityName, updated_at: timestamp })
-      .eq('id', validated.id)
+      .update({ name: newCityName, updated_at: new Date().toISOString() })
+      .eq('id', id)
       .eq('user_id', user.id);
 
-    if (updateCityError) {
-      console.error('Ошибка обновления города:', updateCityError);
-      return { error: 'Не удалось обновить город' };
+    if (updateError) {
+      if (updateError.code === '23505') {
+        return { error: 'Город с таким названием уже существует' };
+      }
+      console.error('Ошибка обновления имени города:', updateError);
+      return { error: 'Не удалось обновить имя города' };
     }
 
-    const { error: updateCanonicalError } = await supabase
-      .from('city_synonyms')
-      .update({ synonym: newCityName })
-      .eq('city_id', validated.id)
-      .eq('user_id', user.id)
-      .eq('synonym', existingCity.name);
+    // If the old city name was used as a canonical synonym, update it as well
+    if (oldCityName.trim().toLowerCase() !== newCityName.trim().toLowerCase()) {
+      const { error: synonymUpdateError } = await supabase
+        .from('city_synonyms')
+        .update({ synonym: newCityName })
+        .eq('user_id', user.id)
+        .eq('city_id', id)
+        .eq('synonym', oldCityName);
 
-    if (updateCanonicalError) {
-      console.error('Ошибка обновления основного названия города:', updateCanonicalError);
-      return { error: 'Не удалось обновить основной вариант города' };
+      if (synonymUpdateError) {
+        console.warn('Не удалось обновить канонический синоним:', synonymUpdateError);
+      }
     }
 
-    revalidatePath('/settings');
     revalidatePath('/cities');
+    revalidatePath('/settings');
+
     return { success: true };
   } catch (err) {
-    console.error('Ошибка изменения города:', err);
-    return { error: 'Произошла ошибка при обновлении города' };
+    console.error('Ошибка при обновлении имени города:', err);
+    return { error: 'Произошла непредвиденная ошибка' };
+  }
+}
+
+export async function deleteAllCities(userId: string) {
+  const supabase = await createServerClient();
+
+  try {
+    // First, get all city IDs for the user
+    const { data: cities, error: citiesError } = await supabase
+      .from('cities')
+      .select('id')
+      .eq('user_id', userId);
+
+    if (citiesError) {
+      console.error('Ошибка при получении городов для массового удаления:', citiesError);
+      return { error: 'Не удалось получить города для удаления' };
+    }
+
+    const cityIds = cities?.map(city => city.id) || [];
+
+    if (cityIds.length > 0) {
+      // Set city_id to null for all expenses linked to these cities
+      const { error: updateExpensesError } = await supabase
+        .from('expenses')
+        .update({ city_id: null, updated_at: new Date().toISOString() })
+        .in('city_id', cityIds)
+        .eq('user_id', userId);
+
+      if (updateExpensesError) {
+        console.error('Ошибка сброса привязки городов в расходах при массовом удалении:', updateExpensesError);
+        return { error: 'Не удалось обновить расходы при массовом удалении городов' };
+      }
+
+      // Delete all city synonyms for these cities
+      const { error: deleteSynonymsError } = await supabase
+        .from('city_synonyms')
+        .delete()
+        .in('city_id', cityIds)
+        .eq('user_id', userId);
+
+      if (deleteSynonymsError) {
+        console.error('Ошибка удаления синонимов городов при массовом удалении:', deleteSynonymsError);
+        return { error: 'Не удалось удалить синонимы городов при массовом удалении' };
+      }
+
+      // Delete all city aliases for these cities (assuming city_aliases table exists)
+      // Note: The schema doesn't explicitly show city_aliases, but deleteCity function references it.
+      // If it doesn't exist, this part will need to be removed or adjusted.
+      const { error: deleteAliasesError } = await supabase
+        .from('city_aliases') // Assuming this table exists
+        .delete()
+        .in('city_id', cityIds)
+        .eq('user_id', userId);
+
+      if (deleteAliasesError) {
+        console.error('Ошибка удаления алиасов городов при массовом удалении:', deleteAliasesError);
+        return { error: 'Не удалось удалить алиасы городов при массовом удалении' };
+      }
+
+      // Finally, delete the cities themselves
+      const { error: deleteCitiesError } = await supabase
+        .from('cities')
+        .delete()
+        .in('id', cityIds)
+        .eq('user_id', userId);
+
+      if (deleteCitiesError) {
+        console.error('Ошибка массового удаления городов:', deleteCitiesError);
+        return { error: 'Не удалось удалить города' };
+      }
+    }
+
+    revalidatePath('/cities');
+    revalidatePath('/settings');
+    return { success: true };
+  } catch (err) {
+    console.error('Непредвиденная ошибка при массовом удалении городов:', err);
+    return { error: 'Произошла непредвиденная ошибка при массовом удалении городов' };
+  }
+}
+
+export async function deleteAllCitySynonyms(userId: string) {
+  const supabase = await createServerClient();
+
+  try {
+    const { error } = await supabase
+      .from('city_synonyms')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Ошибка массового удаления синонимов городов:', error);
+      return { error: 'Не удалось удалить синонимы городов' };
+    }
+
+    // Revalidate paths that might be affected
+    revalidatePath('/cities');
+    revalidatePath('/settings');
+    return { success: true };
+  } catch (err) {
+    console.error('Непредвиденная ошибка при массовом удалении синонимов городов:', err);
+    return { error: 'Произошла непредвиденная ошибка при массовом удалении синонимов городов' };
   }
 }

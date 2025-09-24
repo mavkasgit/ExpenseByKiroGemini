@@ -15,6 +15,7 @@ const deleteOptions = [
   { id: 'deleteKeywords', label: 'Все ключевые слова', description: 'Удалить все созданные вами ключевые слова.' },
   { id: 'deleteCategories', label: 'Все категории', description: 'Удалить все категории. Расходы останутся без категорий.' },
   { id: 'deleteGroups', label: 'Все группы категорий', description: 'Удалить все группы. Категории останутся без групп.' },
+  { id: 'deleteCitiesAndSynonyms', label: 'Все города и синонимы', description: 'Удалить все города и их альтернативные названия.' }, // Added new option
 ];
 
 export function SelectiveDeleteModal({ isOpen, onClose }: SelectiveDeleteModalProps) {

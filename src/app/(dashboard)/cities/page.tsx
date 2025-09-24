@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/Button'
 import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps'
 import { DEFAULT_MARKER_PRESET } from '@/lib/constants/cityMarkers'
+import { createClient } from '@/lib/supabase/client'
 
 type CityExpensePeriod = '30d' | '90d' | '365d' | 'all'
 
@@ -59,6 +60,7 @@ export default function CitiesPage() {
   const [error, setError] = useState<string | null>(null)
   const [mapState, setMapState] = useState<MapState>(MAP_DEFAULT_STATE)
   const mapRef = useRef<unknown>(null)
+  const [userEmail, setUserEmail] = useState<string | undefined>()
 
   const currencyFormatter = useMemo(
     () =>
@@ -84,6 +86,15 @@ export default function CitiesPage() {
     () => sortedExpenses.reduce((acc, city) => acc + (Number.isFinite(city.totalAmount) ? city.totalAmount : 0), 0),
     [sortedExpenses]
   )
+
+  useEffect(() => {
+    const supabase = createClient()
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUserEmail(user?.email)
+    }
+    void fetchUser()
+  }, [])
 
   useEffect(() => {
     const loadCityExpenses = async () => {
@@ -152,6 +163,7 @@ export default function CitiesPage() {
       <StickyPageHeader
         title="Города и синонимы"
         description="Управляйте городами и анализируйте географию ваших расходов."
+        userEmail={userEmail}
       />
       <main className="container mx-auto grid gap-6 px-4 pb-12 pt-6">
         <Card>

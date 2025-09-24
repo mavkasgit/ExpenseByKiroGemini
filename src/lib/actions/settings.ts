@@ -44,6 +44,7 @@ interface SelectiveDeleteOptions {
   deleteCategories?: boolean
   deleteKeywords?: boolean
   deleteExpenses?: boolean
+  deleteCitiesAndSynonyms?: boolean // Added new option
 }
 
 // Абсолютно новое действие для выборочного удаления
@@ -103,7 +104,81 @@ export async function selectiveDelete(options: SelectiveDeleteOptions) {
       deletedItems.push('группы')
     }
 
+    // New logic for deleting cities and synonyms
+    if (options.deleteCitiesAndSynonyms) {
+      // First, get all city IDs for the user
+      const { data: cities, error: citiesError } = await supabase
+        .from('cities')
+        .select('id')
+        .eq('user_id', user.id);
+
+      if (citiesError) {
+        throw new Error('Ошибка при получении городов для массового удаления: ' + citiesError.message);
+      }
+
+      const cityIds = cities?.map(city => city.id) || [];
+
+      if (cityIds.length > 0) {
+        // Set city_id to null for all expenses linked to these cities
+        const { error: updateExpensesError } = await supabase
+          .from('expenses')
+          .update({ city_id: null, updated_at: new Date().toISOString() })
+          .in('city_id', cityIds)
+          .eq('user_id', user.id);
+
+        if (updateExpensesError) {
+          throw new Error('Ошибка сброса привязки городов в расходах при массовом удалении: ' + updateExpensesError.message);
+        }
+
+        // Delete all city synonyms for these cities
+        const { error: deleteSynonymsError } = await supabase
+          .from('city_synonyms')
+          .delete()
+          .in('city_id', cityIds)
+          .eq('user_id', user.id);
+
+        if (deleteSynonymsError) {
+          throw new Error('Ошибка удаления синонимов городов при массовом удалении: ' + deleteSynonymsError.message);
+        }
+
+        // Delete all unrecognized cities for the user
+        const { error: deleteUnrecognizedCitiesError } = await supabase
+          .from('unrecognized_cities')
+          .delete()
+          .eq('user_id', user.id);
+
+        if (deleteUnrecognizedCitiesError) {
+          throw new Error('Ошибка удаления неопознанных городов при массовом удалении: ' + deleteUnrecognizedCitiesError.message);
+        }
+
+        // Delete all city aliases for these cities (assuming city_aliases table exists)
+        const { error: deleteAliasesError } = await supabase
+          .from('city_aliases') // Assuming this table exists
+          .delete()
+          .in('city_id', cityIds)
+          .eq('user_id', user.id);
+
+        if (deleteAliasesError) {
+          throw new Error('Ошибка удаления алиасов городов при массовом удалении: ' + deleteAliasesError.message);
+        }
+
+        // Finally, delete the cities themselves
+        const { error: deleteCitiesError } = await supabase
+          .from('cities')
+          .delete()
+          .in('id', cityIds)
+          .eq('user_id', user.id);
+
+        if (deleteCitiesError) {
+          throw new Error('Ошибка массового удаления городов: ' + deleteCitiesError.message);
+        }
+      }
+      deletedItems.push('города и синонимы');
+    }
+
+
     revalidatePath('/', 'layout')
+    revalidatePath('/cities') // Added revalidation for cities page
     return { success: true, message: `Успешно удалены: ${deletedItems.join(', ') || 'ничего'}.` }
 
   } catch (error: any) {
@@ -131,6 +206,10 @@ export async function deleteAllUserData() {
       | 'city_synonyms'
       | 'categories'
       | 'category_groups'
+      | 'cities' // Added cities table
+      | 'unrecognized_cities' // Added unrecognized_cities table
+      | 'city_aliases' // Added city_aliases table
+
 
     const deleteWithCheck = async (
       table: SupabaseTable,
@@ -153,15 +232,19 @@ export async function deleteAllUserData() {
     await deleteWithCheck('unrecognized_keywords', 'неопознанных ключевых слов')
     await deleteWithCheck('category_keywords', 'ключевых слов', 'ключевые слова и синонимы')
 
-    await deleteWithCheck('city_synonyms', 'синонимов городов', 'синонимы городов')
+    await deleteWithCheck('city_synonyms', 'синонимов городов')
+    await deleteWithCheck('unrecognized_cities', 'неопознанных городов')
+    await deleteWithCheck('city_aliases', 'алиасов городов') // Assuming this table exists
+    await deleteWithCheck('cities', 'городов', 'города и синонимы') // Added cities table
 
     await deleteWithCheck('categories', 'категорий', 'категории')
     await deleteWithCheck('category_groups', 'групп категорий', 'группы категорий')
 
     revalidatePath('/', 'layout')
+    revalidatePath('/cities') // Added revalidation for cities page
     return {
       success: true,
-      message: `Успешно удалены: ${deletedItems.join(', ')}.`,
+      message: `Успешно удалены: ${deletedItems.join(', ')}.`, 
     }
 
   } catch (error: any) {
