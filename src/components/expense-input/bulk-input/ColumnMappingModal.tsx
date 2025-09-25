@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import type { ColumnMapping } from '@/types'
+import type { ColumnMapping, ColumnMappingField } from '@/types'
 
 // Компонент подсказки
 function Tooltip({ children, content }: { children: React.ReactNode; content: string }) {
@@ -23,7 +24,7 @@ function Tooltip({ children, content }: { children: React.ReactNode; content: st
 // ColumnMapping импортирован из @/types
 
 interface FieldAssignment {
-  field: 'amount' | 'description' | 'city' | 'expense_date' | 'notes'
+  field: ColumnMappingField
   assignedColumn: number | null
   required: boolean
 }
@@ -38,31 +39,56 @@ interface ColumnMappingModalProps {
   isEditingMode?: boolean // Режим редактирования сохраненной схемы
 }
 
-const FIELD_ICONS = {
+const FIELD_ICONS: Record<ColumnMappingField, string> = {
   amount: '💰',
   description: '📝',
   city: '📍',
   expense_date: '📅',
-  notes: '📋',
-  skip: ''
+  expense_time: '⏰',
+  notes: '📋'
 }
 
-const FIELD_LABELS = {
+const FIELD_LABELS: Record<ColumnMappingField, string> = {
   amount: 'Сумма',
   description: 'Описание',
   city: 'Город',
   expense_date: 'Дата',
-  notes: 'Примечания',
-  skip: 'Пропустить'
+  expense_time: 'Время',
+  notes: 'Примечания'
 }
 
-const FIELD_COLORS = {
+const FIELD_COLORS: Record<ColumnMappingField, string> = {
   amount: 'bg-green-100 border-green-300 text-green-800',
   description: 'bg-blue-100 border-blue-300 text-blue-800',
   city: 'bg-indigo-100 border-indigo-300 text-indigo-800',
   expense_date: 'bg-purple-100 border-purple-300 text-purple-800',
-  notes: 'bg-yellow-100 border-yellow-300 text-yellow-800',
-  skip: 'bg-gray-100 border-gray-300 text-gray-600'
+  expense_time: 'bg-teal-100 border-teal-300 text-teal-800',
+  notes: 'bg-yellow-100 border-yellow-300 text-yellow-800'
+}
+
+const COLUMN_FIELD_OPTIONS: Array<{ field: ColumnMappingField; label: string; icon: string }> = (
+  Object.keys(FIELD_LABELS) as ColumnMappingField[]
+).map(field => ({
+  field,
+  label: FIELD_LABELS[field],
+  icon: FIELD_ICONS[field]
+}))
+
+const COLUMN_FIELD_SET = new Set<ColumnMappingField>(COLUMN_FIELD_OPTIONS.map(option => option.field))
+
+function isColumnMappingField(value: unknown): value is ColumnMappingField {
+  return typeof value === 'string' && COLUMN_FIELD_SET.has(value as ColumnMappingField)
+}
+
+function createDefaultFieldAssignments(): FieldAssignment[] {
+  return [
+    { field: 'amount', assignedColumn: null, required: true },
+    { field: 'description', assignedColumn: null, required: true },
+    { field: 'city', assignedColumn: null, required: false },
+    { field: 'expense_date', assignedColumn: null, required: false },
+    { field: 'expense_time', assignedColumn: null, required: false },
+    { field: 'notes', assignedColumn: null, required: false }
+  ]
 }
 
 export function ColumnMappingModal({ 
@@ -79,106 +105,251 @@ export function ColumnMappingModal({
 
   // Инициализируем назначения полей
   const [fieldAssignments, setFieldAssignments] = useState<FieldAssignment[]>([])
+  const [openColumnPicker, setOpenColumnPicker] = useState<number | null>(null)
+  const [hiddenColumns, setHiddenColumns] = useState<Set<number>>(() => new Set())
+  const [pickerPosition, setPickerPosition] = useState<{
+    top: number
+    left: number
+    width: number
+  } | null>(null)
+  const columnPickerRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const dropdownContainerRef = useRef<HTMLDivElement | null>(null)
 
   // Обновляем состояние при изменении sampleData
   useEffect(() => {
     if (sampleData.length === 0) {
       setColumnOrder([])
       setFieldAssignments([])
+      setHiddenColumns(new Set())
       return
     }
 
     const columnCount = Math.max(...sampleData.map(row => row.length))
-    
-    // Обновляем порядок столбцов
-    setColumnOrder(Array.from({ length: columnCount }, (_, index) => index))
-    
-    // Проверяем, есть ли сохраненная схема и подходит ли она
+
+    const defaultOrder = Array.from({ length: columnCount }, (_, index) => index)
+    setColumnOrder(defaultOrder)
+
+    const baseAssignments = createDefaultFieldAssignments()
+    const nextHiddenColumns = new Set<number>()
+
     if (savedMapping && savedMapping.length === columnCount) {
-      // Применяем сохраненную схему
-      const newFieldAssignments: FieldAssignment[] = [
-        { field: 'amount' as const, assignedColumn: null, required: true },
-        { field: 'description' as const, assignedColumn: null, required: true },
-        { field: 'city' as const, assignedColumn: null, required: false },
-        { field: 'expense_date' as const, assignedColumn: null, required: false },
-        { field: 'notes' as const, assignedColumn: null, required: false }
-      ]
-      
-      // Восстанавливаем назначения из сохраненной схемы
       savedMapping.forEach((column, index) => {
-        if (column.targetField !== 'skip') {
-          const targetField = column.targetField as 'amount' | 'description' | 'city' | 'expense_date' | 'notes'
-          const fieldAssignment = newFieldAssignments.find(f => f.field === targetField)
-          if (fieldAssignment) {
-            fieldAssignment.assignedColumn = index as number
-          }
+        const originalIndex = defaultOrder[index]
+        if (column?.hidden) {
+          nextHiddenColumns.add(originalIndex)
+          return
         }
+
+        const targets = Array.isArray(column.targetFields)
+          ? column.targetFields.filter(isColumnMappingField)
+          : []
+
+        targets.forEach(targetField => {
+          const assignment = baseAssignments.find(item => item.field === targetField)
+          if (assignment) {
+            assignment.assignedColumn = originalIndex
+          }
+        })
       })
-      
-      setFieldAssignments(newFieldAssignments)
-    } else {
-      // Обновляем назначения полей - изначально все неназначенные
-      setFieldAssignments([
-        { field: 'amount', assignedColumn: null, required: true },
-        { field: 'description', assignedColumn: null, required: true },
-        { field: 'city', assignedColumn: null, required: false },
-        { field: 'expense_date', assignedColumn: null, required: false },
-        { field: 'notes', assignedColumn: null, required: false }
-      ])
     }
+
+    setFieldAssignments(baseAssignments)
+    setHiddenColumns(nextHiddenColumns)
   }, [sampleData, savedMapping])
 
+  useEffect(() => {
+    if (!isOpen) {
+      setOpenColumnPicker(null)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    setOpenColumnPicker(null)
+  }, [columnOrder])
+
+  useEffect(() => {
+    if (openColumnPicker !== null && hiddenColumns.has(openColumnPicker)) {
+      setOpenColumnPicker(null)
+    }
+  }, [hiddenColumns, openColumnPicker])
+
+  const updatePickerPosition = useCallback(() => {
+    if (openColumnPicker === null) {
+      setPickerPosition(null)
+      return
+    }
+
+    const anchor = columnPickerRefs.current[openColumnPicker]
+    if (!anchor) {
+      setPickerPosition(null)
+      return
+    }
+
+    const rect = anchor.getBoundingClientRect()
+    const viewportWidth = typeof window !== 'undefined'
+      ? window.innerWidth || document.documentElement.clientWidth || rect.width
+      : rect.width
+    const dropdownWidth = Math.max(rect.width, 240)
+    const maxLeft = Math.max(viewportWidth - dropdownWidth - 8, 8)
+    const left = Math.min(Math.max(rect.left, 8), maxLeft)
+
+    setPickerPosition({
+      top: Math.max(rect.bottom + 4, 8),
+      left,
+      width: dropdownWidth
+    })
+  }, [openColumnPicker])
+
+  useLayoutEffect(() => {
+    if (openColumnPicker === null) {
+      setPickerPosition(null)
+      return
+    }
+
+    updatePickerPosition()
+
+    const handleScroll = () => updatePickerPosition()
+    window.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('resize', handleScroll)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('resize', handleScroll)
+    }
+  }, [openColumnPicker, updatePickerPosition])
+
+  useEffect(() => {
+    if (openColumnPicker === null) {
+      return
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const container = columnPickerRefs.current[openColumnPicker]
+      const dropdown = dropdownContainerRef.current
+      const target = event.target as Node
+      if (container && container.contains(target)) {
+        return
+      }
+      if (dropdown && dropdown.contains(target)) {
+        return
+      }
+      if (container && !container.contains(target)) {
+        setOpenColumnPicker(null)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenColumnPicker(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [openColumnPicker])
+
   // Назначение поля на столбец с предотвращением дублирования
-  const assignFieldToColumn = useCallback((field: 'amount' | 'description' | 'city' | 'expense_date' | 'notes', columnIndex: number | null) => {
-    setFieldAssignments(prev => prev.map(assignment => {
-      // Если назначаем новое поле на столбец, убираем старое назначение с этого столбца
-      if (assignment.assignedColumn === columnIndex && assignment.field !== field) {
-        return { ...assignment, assignedColumn: null }
-      }
-      // Назначаем новое поле
-      if (assignment.field === field) {
+  const toggleFieldForColumn = useCallback((field: ColumnMappingField, columnIndex: number) => {
+    setFieldAssignments(prev =>
+      prev.map(assignment => {
+        if (assignment.field !== field) {
+          return assignment
+        }
+
+        if (assignment.assignedColumn === columnIndex) {
+          return { ...assignment, assignedColumn: null }
+        }
+
         return { ...assignment, assignedColumn: columnIndex }
-      }
-      return assignment
-    }))
+      })
+    )
   }, [])
 
-  // Получаем назначенное поле для столбца
-  const getAssignedField = useCallback((columnIndex: number) => {
-    const assignment = fieldAssignments.find(f => f.assignedColumn === columnIndex)
-    return assignment?.field || 'skip'
-  }, [fieldAssignments])
+  const toggleColumnHidden = useCallback((columnIndex: number) => {
+    setHiddenColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(columnIndex)) {
+        next.delete(columnIndex)
+      } else {
+        next.add(columnIndex)
+      }
+      return next
+    })
+
+    setFieldAssignments(prev =>
+      prev.map(assignment =>
+        assignment.assignedColumn === columnIndex
+          ? { ...assignment, assignedColumn: null }
+          : assignment
+      )
+    )
+
+    setOpenColumnPicker(null)
+  }, [])
+
+  const getAssignedFields = useCallback(
+    (columnIndex: number): ColumnMappingField[] =>
+      fieldAssignments.filter(assignment => assignment.assignedColumn === columnIndex).map(assignment => assignment.field),
+    [fieldAssignments]
+  )
+
+  const visibleColumnOrder = useMemo(
+    () => columnOrder.filter(index => !hiddenColumns.has(index)),
+    [columnOrder, hiddenColumns]
+  )
+
+  const hiddenColumnOrder = useMemo(
+    () => columnOrder.filter(index => hiddenColumns.has(index)),
+    [columnOrder, hiddenColumns]
+  )
+
+  const getColumnDisplayLabel = useCallback(
+    (originalIndex: number) => {
+      const displayIndex = columnOrder.indexOf(originalIndex)
+      if (displayIndex === -1) {
+        return `Столбец ${originalIndex + 1}`
+      }
+
+      if (displayIndex >= 0 && displayIndex < 26) {
+        return `Столбец ${String.fromCharCode(65 + displayIndex)}`
+      }
+
+      return `Столбец ${displayIndex + 1}`
+    },
+    [columnOrder]
+  )
 
   // Создание маппинга из текущих настроек
   const createMapping = useCallback(() => {
-    // Преобразуем в старый формат для совместимости
     const mapping: ColumnMapping[] = columnOrder.map((originalIndex, newIndex) => ({
       sourceIndex: newIndex,
-      targetField: 'skip' as const,
-      enabled: true, // Все столбцы включены по умолчанию
-      preview: sampleData[0]?.[originalIndex] || ''
+      targetFields: [],
+      enabled: false,
+      preview: sampleData[0]?.[originalIndex] || '',
+      hidden: hiddenColumns.has(originalIndex)
     }))
 
     // Назначаем поля
     fieldAssignments.forEach(assignment => {
-      if (assignment.assignedColumn !== null) {
+      if (assignment.assignedColumn !== null && !hiddenColumns.has(assignment.assignedColumn)) {
         const orderIndex = columnOrder.indexOf(assignment.assignedColumn)
         if (orderIndex !== -1) {
-          mapping[orderIndex].targetField = assignment.field
+          const targets = mapping[orderIndex].targetFields
+          if (!targets.includes(assignment.field)) {
+            targets.push(assignment.field)
+          }
           mapping[orderIndex].enabled = true
         }
       }
     })
 
-    // Отключаем столбцы, которые не назначены ни одному полю
-    mapping.forEach(item => {
-      if (item.targetField === 'skip') {
-        item.enabled = false
-      }
-    })
-
     return mapping
-  }, [columnOrder, fieldAssignments, sampleData])
+  }, [columnOrder, fieldAssignments, sampleData, hiddenColumns])
 
   // Применение настроек для редактирования
   const handleApply = useCallback(() => {
@@ -204,9 +375,16 @@ export function ColumnMappingModal({
     // Проверяем обязательные поля
     const amountField = fieldAssignments.find(f => f.field === 'amount')
     const descriptionField = fieldAssignments.find(f => f.field === 'description')
-    
+
     if (!amountField?.assignedColumn || !descriptionField?.assignedColumn) {
       return
+    }
+
+    if (onApplyAndSave) {
+      const confirmed = window.confirm('Сохранить все расходы с текущим назначением столбцов? Пожалуйста, убедитесь, что данные верны.')
+      if (!confirmed) {
+        return
+      }
     }
 
     const mapping = createMapping()
@@ -224,6 +402,7 @@ export function ColumnMappingModal({
     const descriptionField = fieldAssignments.find(f => f.field === 'description')
     const cityField = fieldAssignments.find(f => f.field === 'city')
     const dateField = fieldAssignments.find(f => f.field === 'expense_date')
+    const timeField = fieldAssignments.find(f => f.field === 'expense_time')
     const notesField = fieldAssignments.find(f => f.field === 'notes')
 
     // В режиме редактирования не требуем обязательные поля для предпросмотра
@@ -251,6 +430,8 @@ export function ColumnMappingModal({
         row[columnOrder.indexOf(cityField.assignedColumn)] || '' : '',
       expense_date: dateField && dateField.assignedColumn !== null && dateField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(dateField.assignedColumn)] || '' : '',
+      expense_time: timeField && timeField.assignedColumn !== null && timeField.assignedColumn !== undefined ?
+        row[columnOrder.indexOf(timeField.assignedColumn)] || '' : '',
       notes: notesField && notesField.assignedColumn !== null && notesField.assignedColumn !== undefined ?
         row[columnOrder.indexOf(notesField.assignedColumn)] || '' : ''
     }))
@@ -259,17 +440,12 @@ export function ColumnMappingModal({
   // Сброс к значениям по умолчанию
   const handleReset = useCallback(() => {
     if (sampleData.length === 0) return
-    
+
     const columnCount = Math.max(...sampleData.map(row => row.length))
-    
+
     setColumnOrder(Array.from({ length: columnCount }, (_, index) => index))
-    setFieldAssignments([
-      { field: 'amount', assignedColumn: null, required: true },
-      { field: 'description', assignedColumn: null, required: true },
-      { field: 'city', assignedColumn: null, required: false },
-      { field: 'expense_date', assignedColumn: null, required: false },
-      { field: 'notes', assignedColumn: null, required: false }
-    ])
+    setFieldAssignments(createDefaultFieldAssignments())
+    setHiddenColumns(new Set())
   }, [sampleData])
 
   if (sampleData.length === 0) {
@@ -329,73 +505,236 @@ export function ColumnMappingModal({
               </div>
             </Tooltip>
           </div>
-          
+
+          <p className="mb-3 text-xs text-gray-500">
+            Можно выбрать несколько полей для одного столбца — например, одновременно отметить дату и время или описание и город.
+          </p>
+
           <div className="bg-white border rounded-lg overflow-hidden mb-4">
-            <div className="overflow-x-auto">
-              <table className="text-sm" style={{width: 'auto', minWidth: '100%'}}>
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    {columnOrder.map((originalIndex, displayIndex) => {
-                      const assignedField = getAssignedField(originalIndex)
-                      return (
-                        <th key={originalIndex} className="text-center whitespace-nowrap p-1">
-                          <select
-                            value={assignedField}
-                            onChange={(e) => {
-                              const newField = e.target.value as 'amount' | 'description' | 'city' | 'expense_date' | 'notes' | 'skip'
-                              if (newField === 'skip') {
-                                // Убираем назначение
-                                setFieldAssignments(prev => prev.map(assignment =>
-                                  assignment.assignedColumn === originalIndex
-                                    ? { ...assignment, assignedColumn: null }
-                                    : assignment
-                                ))
-                              } else {
-                                // Назначаем поле
-                                assignFieldToColumn(newField, originalIndex)
-                              }
-                            }}
-                            className={`px-3 py-2 text-sm font-medium border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 rounded ${FIELD_COLORS[assignedField]} whitespace-nowrap text-center min-w-fit`}
-                            style={{
-                              appearance: 'none',
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: 'right 0.5rem center',
-                              backgroundRepeat: 'no-repeat',
-                              backgroundSize: '1rem 1rem',
-                              paddingRight: '2.5rem'
-                            }}
-                          >
-                            <option value="skip">{String.fromCharCode(65 + displayIndex)}</option>
-                            <option value="amount">💰 Сумма</option>
-                            <option value="description">📝 Описание</option>
-                            <option value="city">📍 Город</option>
-                            <option value="expense_date">📅 Дата</option>
-                            <option value="notes">📋 Примечания</option>
-                          </select>
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sampleData.slice(0, 5).map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-b hover:bg-gray-50">
-                      {columnOrder.map((originalIndex, displayIndex) => (
-                        <td key={originalIndex} className="px-4 py-3 text-gray-900 whitespace-nowrap">
-                          {row[originalIndex] || '—'}
-                        </td>
-                      ))}
+            {visibleColumnOrder.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="text-sm" style={{ width: 'auto', minWidth: '100%' }}>
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      {visibleColumnOrder.map(originalIndex => {
+                        const assignedFields = getAssignedFields(originalIndex)
+                        const columnLabel = getColumnDisplayLabel(originalIndex)
+                        const isOpen = openColumnPicker === originalIndex
+
+                        return (
+                          <th key={originalIndex} className="p-2 align-top">
+                            <div
+                              className="flex flex-col items-center gap-2"
+                              ref={node => {
+                                if (node) {
+                                  columnPickerRefs.current[originalIndex] = node
+                                } else {
+                                  delete columnPickerRefs.current[originalIndex]
+                                }
+                              }}
+                            >
+                              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {columnLabel}
+                              </div>
+                              <div className="w-full max-w-[240px]">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenColumnPicker(prev =>
+                                      prev === originalIndex ? null : originalIndex
+                                    )
+                                  }
+                                  aria-expanded={isOpen}
+                                  className={`flex w-full items-center justify-between rounded-md border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                    assignedFields.length > 0
+                                      ? 'border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:text-blue-700'
+                                      : 'border-dashed border-gray-300 bg-white text-gray-400 hover:border-blue-300 hover:text-blue-600'
+                                  }`}
+                                >
+                                  <span>
+                                    {assignedFields.length > 0
+                                      ? 'Изменить выбор'
+                                      : 'Выбрать поля'}
+                                  </span>
+                                  <span
+                                    className={`ml-2 text-gray-400 transition-transform ${
+                                      isOpen ? 'rotate-180' : ''
+                                    }`}
+                                    aria-hidden
+                                  >
+                                    ▾
+                                  </span>
+                                </button>
+                              </div>
+                              {isOpen && pickerPosition && typeof window !== 'undefined'
+                                ? createPortal(
+                                    (
+                                      <div
+                                        ref={node => {
+                                          dropdownContainerRef.current = node
+                                        }}
+                                        className="z-[2000] rounded-md border border-gray-200 bg-white shadow-xl"
+                                        style={{
+                                          position: 'fixed',
+                                          top: pickerPosition.top,
+                                          left: pickerPosition.left,
+                                          width: pickerPosition.width
+                                        }}
+                                      >
+                                        <div className="max-h-56 overflow-y-auto p-2 space-y-1">
+                                          {COLUMN_FIELD_OPTIONS.map(option => {
+                                            const fieldMeta = fieldAssignments.find(item => item.field === option.field)
+                                            const isChecked = assignedFields.includes(option.field)
+                                            const isRequired = Boolean(fieldMeta?.required) && fieldMeta?.assignedColumn === null
+                                            const assignedColumnIndex = fieldMeta?.assignedColumn
+                                            const isAssignedElsewhere =
+                                              typeof assignedColumnIndex === 'number' &&
+                                              assignedColumnIndex !== originalIndex
+                                            const assignedDisplayLabel =
+                                              isAssignedElsewhere && typeof assignedColumnIndex === 'number'
+                                                ? getColumnDisplayLabel(assignedColumnIndex)
+                                                : null
+
+                                            return (
+                                              <label
+                                                key={option.field}
+                                                className="flex items-start gap-2 rounded-md px-2 py-1 text-xs hover:bg-gray-50"
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked}
+                                                  onChange={() => toggleFieldForColumn(option.field, originalIndex)}
+                                                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <div className="flex flex-col">
+                                                  <span className="flex items-center gap-2 text-gray-700">
+                                                    <span aria-hidden>{option.icon}</span>
+                                                    <span>{option.label}</span>
+                                                  </span>
+                                                  {isAssignedElsewhere && assignedDisplayLabel && (
+                                                    <span className="pl-6 text-[11px] text-amber-600">
+                                                      Уже назначено: {assignedDisplayLabel}
+                                                    </span>
+                                                  )}
+                                                  {isRequired && (
+                                                    <span className="pl-6 text-[11px] text-red-600">
+                                                      Обязательное поле
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </label>
+                                            )
+                                          })}
+                                        </div>
+                                        <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-600">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleColumnHidden(originalIndex)}
+                                            className="flex items-center gap-2 text-left text-gray-700 hover:text-blue-600"
+                                          >
+                                            <span aria-hidden>{hiddenColumns.has(originalIndex) ? '👀' : '🙈'}</span>
+                                            <span>
+                                              {hiddenColumns.has(originalIndex)
+                                                ? 'Показать столбец'
+                                                : 'Скрыть столбец'}
+                                            </span>
+                                          </button>
+                                          <p className="mt-1 text-[11px] text-gray-400">
+                                            Скрытые столбцы не будут мешать, вы всегда можете вернуть их ниже.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ),
+                                    document.body
+                                  )
+                                : null}
+                              <div className="flex min-h-[24px] flex-wrap justify-center gap-1">
+                                {assignedFields.length > 0 ? (
+                                  assignedFields.map(field => (
+                                    <span
+                                      key={field}
+                                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${FIELD_COLORS[field]}`}
+                                    >
+                                      <span aria-hidden>{FIELD_ICONS[field]}</span>
+                                      <span>{FIELD_LABELS[field]}</span>
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-xs text-gray-400">Поля не выбраны</span>
+                                )}
+                              </div>
+                            </div>
+                          </th>
+                        )
+                      })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {sampleData.length > 5 && (
+                  </thead>
+                  <tbody>
+                    {sampleData.slice(0, 5).map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b hover:bg-gray-50">
+                        {visibleColumnOrder.map(originalIndex => (
+                          <td key={originalIndex} className="px-4 py-3 text-gray-900 whitespace-nowrap">
+                            {row[originalIndex] || '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-6 py-8 text-center text-sm text-gray-500">
+                Все столбцы скрыты. Раскройте хотя бы один, чтобы продолжить настройку.
+              </div>
+            )}
+            {sampleData.length > 5 && visibleColumnOrder.length > 0 && (
               <div className="px-4 py-2 bg-gray-50 text-sm text-gray-600 text-center">
                 ... и еще {sampleData.length - 5} записей
               </div>
             )}
           </div>
+
+          {hiddenColumnOrder.length > 0 && (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  Скрытые столбцы
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Мы запомним их позиции и автоматически спрячем при следующем импорте.
+                </p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {hiddenColumnOrder.map(originalIndex => {
+                  const columnLabel = getColumnDisplayLabel(originalIndex)
+                  const sampleValue = sampleData[0]?.[originalIndex] || ''
+                  return (
+                    <div
+                      key={originalIndex}
+                      className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm"
+                    >
+                      <div className="text-xs font-medium text-gray-700">{columnLabel}</div>
+                      {sampleValue && (
+                        <div
+                          className="max-w-[140px] truncate text-[11px] text-gray-400"
+                          title={sampleValue}
+                        >
+                          {sampleValue}
+                        </div>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleColumnHidden(originalIndex)}
+                      >
+                        Показать
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Предпросмотр результата */}
@@ -419,6 +758,7 @@ export function ColumnMappingModal({
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📝 Описание</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📍 Город</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📅 Дата</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">⏰ Время</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-700 whitespace-nowrap">📋 Примечания</th>
                     </tr>
                   </thead>
@@ -436,6 +776,9 @@ export function ColumnMappingModal({
                         </td>
                         <td className="px-4 py-3 text-purple-700 whitespace-nowrap">
                           {row.expense_date || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-teal-700 whitespace-nowrap">
+                          {row.expense_time || '—'}
                         </td>
                         <td className="px-4 py-3 text-yellow-700 whitespace-nowrap">
                           {row.notes || '—'}

@@ -587,11 +587,20 @@ export type ParsedBankData = {
 export type ExpenseInputMethod = 'single' | 'bulk_table'
 
 // Column mapping types
+export type ColumnMappingField =
+  | 'amount'
+  | 'description'
+  | 'city'
+  | 'expense_date'
+  | 'expense_time'
+  | 'notes'
+
 export interface ColumnMapping {
   sourceIndex: number
-  targetField: 'amount' | 'description' | 'city' | 'expense_date' | 'expense_time' | 'notes' | 'skip'
+  targetFields: ColumnMappingField[]
   enabled: boolean
   preview: string
+  hidden?: boolean
 }
 
 export type BulkImportResult = {

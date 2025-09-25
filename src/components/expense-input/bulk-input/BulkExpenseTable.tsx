@@ -347,7 +347,7 @@ export function BulkExpenseTable({
               <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 w-32">
                 Дата *
               </th>
-              <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 w-24">
+              <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 w-20">
                 Время
               </th>
               <th className="border border-gray-300 px-3 py-2 text-left text-sm font-medium text-gray-700 w-48">
@@ -467,8 +467,8 @@ export function BulkExpenseTable({
                   </td>
 
                   {/* Время */}
-                  <td 
-                    className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50"
+                  <td
+                    className="border border-gray-300 px-1 py-1 cursor-pointer hover:bg-gray-50 w-20"
                     onClick={() => {
                       setEditingCell(`${tempId}-expense_time`)
                       timeInputRefs.current[tempId]?.focus()
@@ -486,7 +486,7 @@ export function BulkExpenseTable({
                         onKeyPress={(e) => handleKeyDown(e, tempId, 'expense_time')}
                         onFocus={() => setEditingCell(`${tempId}-expense_time`)}
                         disabled={false}
-                        className={`text-sm ${getCellError(tempId, 'expense_time') ? 'ring-red-500' : ''}`}
+                        className={`text-sm ${getCellError(tempId, 'expense_time') ? 'ring-red-500' : ''} w-[76px]`}
                       />
                       {getCellError(tempId, 'expense_time') && (
                         <ErrorMessage error={getCellError(tempId, 'expense_time')} />
