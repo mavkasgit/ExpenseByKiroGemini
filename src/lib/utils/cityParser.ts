@@ -37,22 +37,101 @@ type CitySynonymLookupValue = {
 const citySynonymLookup = new Map<string, CitySynonymLookupValue>()
 const canonicalCityDisplay = new Map<string, string>()
 
+export type CityPatternId =
+  | 'prefix_comma'
+  | 'prefix_suffix'
+  | 'embedded_suffix'
+  | 'quoted_city'
+  | 'comma_anywhere'
+
+interface CityPatternDefinition {
+  id: CityPatternId
+  label: string
+  description: string
+  regex: RegExp
+  baseConfidence: number
+  extract: (match: RegExpMatchArray) => { city: string; cleanDescription: string } | null
+}
+
 // Паттерны для поиска городов в описании
-const CITY_PATTERNS = [
-  // Паттерн: "BY НАЗВАНИЕ, ГОРОД" или "MN НАЗВАНИЕ, ГОРОД"
-  /^(BY|MN)\s+(.+?),\s*([A-ZА-Я]+)$/i,
-  
-  // Паттерн: "BY НАЗВАНИЕ ГОРОД" (город в конце без запятой)
-  /^(BY|MN)\s+(.+?)\s+([A-ZА-Я]+)$/i,
-  
-  // Паттерн: "ПРЕФИКС ГОРОДBY НАЗВАНИЕ" или "ПРЕФИКС ГОРОДMN НАЗВАНИЕ"
-  /^(.+?)([A-ZА-Я]+)(BY|MN)\s+(.+)$/i,
-  
-  // Паттерн: город в кавычках или скобках
-  /^(.+?)\s*[\("']([A-ZА-Я]+)[\)"'](.*)$/i,
-  
-  // Паттерн: город после запятой в любом месте
-  /^(.+?),\s*([A-ZА-Я]+)(.*)$/i
+export const CITY_PATTERN_DEFINITIONS: CityPatternDefinition[] = [
+  {
+    id: 'prefix_comma',
+    label: 'BY/MN + описание, ГОРОД',
+    description: 'Город указан после запятой и префикса BY или MN',
+    regex: /^(BY|MN)\s+(.+?),\s*([A-ZА-Я]+)$/i,
+    baseConfidence: 0.9,
+    extract: match => {
+      const [, , name, city] = match
+      if (!city) return null
+      return {
+        city: city.toUpperCase(),
+        cleanDescription: name?.trim() || ''
+      }
+    }
+  },
+  {
+    id: 'prefix_suffix',
+    label: 'BY/MN + описание + ГОРОД',
+    description: 'Город стоит в конце строки без запятой',
+    regex: /^(BY|MN)\s+(.+?)\s+([A-ZА-Я]+)$/i,
+    baseConfidence: 0.8,
+    extract: match => {
+      const [, , name, city] = match
+      if (!city) return null
+      return {
+        city: city.toUpperCase(),
+        cleanDescription: name?.trim() || ''
+      }
+    }
+  },
+  {
+    id: 'embedded_suffix',
+    label: '...ГОРОДBY описание',
+    description: 'Город стоит перед суффиксом BY/MN и описанием',
+    regex: /^(.+?)([A-ZА-Я]+)(BY|MN)\s+(.+)$/i,
+    baseConfidence: 0.7,
+    extract: match => {
+      const [, , city, , name] = match
+      if (!city) return null
+      return {
+        city: city.toUpperCase(),
+        cleanDescription: name?.trim() || ''
+      }
+    }
+  },
+  {
+    id: 'quoted_city',
+    label: 'Описание "ГОРОД" ...',
+    description: 'Город выделен кавычками или скобками внутри строки',
+    regex: /^(.+?)\s*[\("']([A-ZА-Я]+)[\)"'](.*)$/i,
+    baseConfidence: 0.6,
+    extract: match => {
+      const [, before, city, after] = match
+      if (!city) return null
+      const combined = `${before?.trim() || ''} ${after?.trim() || ''}`.trim()
+      return {
+        city: city.toUpperCase(),
+        cleanDescription: combined
+      }
+    }
+  },
+  {
+    id: 'comma_anywhere',
+    label: 'Описание, ГОРОД ...',
+    description: 'Город указан через запятую в середине текста',
+    regex: /^(.+?),\s*([A-ZА-Я]+)(.*)$/i,
+    baseConfidence: 0.5,
+    extract: match => {
+      const [, before, city, after] = match
+      if (!city) return null
+      const combined = `${before?.trim() || ''} ${after?.trim() || ''}`.trim()
+      return {
+        city: city.toUpperCase(),
+        cleanDescription: combined
+      }
+    }
+  }
 ]
 
 function formatCityDisplay(value: string): string {
@@ -126,19 +205,33 @@ export interface ParsedDescription {
   displayCity: string | null
   matchedSynonym?: string | null
   confidence: number // 0-1, насколько уверены в результате
+  patternId?: CityPatternId | null
+  baseConfidence?: number
+  appliedWeight?: number
+}
+
+export interface ExtractCityOptions {
+  patternWeights?: Partial<Record<CityPatternId, number>>
+  synonymBoost?: number
+  knownCityBoost?: number
+  minConfidence?: number
+  cleanResult?: boolean
 }
 
 /**
  * Извлекает город из описания банковской выписки
  */
-export function extractCityFromDescription(description: string): ParsedDescription {
+export function extractCityFromDescription(description: string, options?: ExtractCityOptions): ParsedDescription {
   if (!description || typeof description !== 'string') {
     return {
       originalDescription: description || '',
       cleanDescription: description || '',
       city: null,
       displayCity: null,
-      confidence: 0
+      confidence: 0,
+      patternId: null,
+      baseConfidence: undefined,
+      appliedWeight: undefined
     }
   }
 
@@ -149,79 +242,64 @@ export function extractCityFromDescription(description: string): ParsedDescripti
     city: null,
     displayCity: null,
     matchedSynonym: null,
-    confidence: 0
+    confidence: 0,
+    patternId: null,
+    baseConfidence: undefined,
+    appliedWeight: undefined
   }
 
+  const patternWeights = options?.patternWeights ?? {}
+  const synonymBoost = options?.synonymBoost ?? 0.2
+  const knownCityBoost = options?.knownCityBoost ?? 0.3
+  const minConfidence = options?.minConfidence ?? 0
+  const shouldClean = options?.cleanResult !== false
+
   // Пробуем каждый паттерн
-  for (const pattern of CITY_PATTERNS) {
-    const match = originalDescription.match(pattern)
+  for (const definition of CITY_PATTERN_DEFINITIONS) {
+    const match = originalDescription.match(definition.regex)
     if (!match) continue
 
-    let potentialCity: string | null = null
-    let cleanDescription = originalDescription
-    let confidence = 0
-    let displayCity: string | null = null
-    let matchedSynonym: string | null = null
+    const extracted = definition.extract(match)
+    if (!extracted) continue
 
-    if (pattern === CITY_PATTERNS[0]) {
-      // "BY НАЗВАНИЕ, ГОРОД" или "MN НАЗВАНИЕ, ГОРОД"
-      const [, prefix, name, city] = match
-      potentialCity = city.toUpperCase()
-      cleanDescription = name.trim()
-      confidence = 0.9
-    } else if (pattern === CITY_PATTERNS[1]) {
-      // "BY НАЗВАНИЕ ГОРОД"
-      const [, prefix, name, city] = match
-      potentialCity = city.toUpperCase()
-      cleanDescription = name.trim()
-      confidence = 0.8
-    } else if (pattern === CITY_PATTERNS[2]) {
-      // "ПРЕФИКС ГОРОДBY НАЗВАНИЕ"
-      const [, prefix, city, suffix, name] = match
-      potentialCity = city.toUpperCase()
-      cleanDescription = name.trim()
-      confidence = 0.7
-    } else if (pattern === CITY_PATTERNS[3]) {
-      // Город в кавычках или скобках
-      const [, before, city, after] = match
-      potentialCity = city.toUpperCase()
-      cleanDescription = `${before.trim()} ${after.trim()}`.trim()
-      confidence = 0.6
-    } else if (pattern === CITY_PATTERNS[4]) {
-      // Город после запятой
-      const [, before, city, after] = match
-      potentialCity = city.toUpperCase()
-      cleanDescription = `${before.trim()} ${after.trim()}`.trim()
-      confidence = 0.5
+    let potentialCity = extracted.city.trim()
+    const candidateDescription = extracted.cleanDescription?.trim() || originalDescription
+
+    const weight = patternWeights[definition.id]
+    const appliedWeight = typeof weight === 'number' && !Number.isNaN(weight) ? Math.max(weight, 0) : 1
+    let confidence = definition.baseConfidence * appliedWeight
+
+    const resolved = resolveCityVariant(potentialCity)
+    if (!resolved) {
+      continue
     }
 
-    if (potentialCity) {
-      const resolved = resolveCityVariant(potentialCity)
-      if (!resolved) {
-        continue
-      }
+    confidence += resolved.isSynonym ? synonymBoost : knownCityBoost
+    if (confidence < minConfidence) {
+      continue
+    }
 
-      confidence += resolved.isSynonym ? 0.2 : 0.3
+    if (confidence > bestMatch.confidence) {
       potentialCity = resolved.canonical
-      displayCity = resolved.display
-      matchedSynonym = resolved.isSynonym ? resolved.synonymDisplay || resolved.display : null
-
-      if (confidence > bestMatch.confidence) {
-        bestMatch = {
-          originalDescription,
-          cleanDescription: cleanDescription || originalDescription,
-          city: potentialCity,
-          displayCity,
-          matchedSynonym,
-          confidence: Math.min(confidence, 1.0)
-        }
+      bestMatch = {
+        originalDescription,
+        cleanDescription: candidateDescription || originalDescription,
+        city: potentialCity,
+        displayCity: resolved.display,
+        matchedSynonym: resolved.isSynonym ? resolved.synonymDisplay || resolved.display : null,
+        confidence: Math.min(confidence, 1.0),
+        patternId: definition.id,
+        baseConfidence: definition.baseConfidence,
+        appliedWeight
       }
     }
   }
 
   // Дополнительная очистка описания
   if (bestMatch.cleanDescription) {
-    bestMatch.cleanDescription = cleanDescription(bestMatch.cleanDescription)
+    bestMatch.cleanDescription = shouldClean
+      ? cleanDescription(bestMatch.cleanDescription)
+      : bestMatch.cleanDescription.trim()
   }
 
   if (bestMatch.city && !bestMatch.displayCity) {
@@ -281,8 +359,8 @@ export function isKnownCity(city: string): boolean {
 /**
  * Пакетная обработка описаний для извлечения городов
  */
-export function batchExtractCities(descriptions: string[]): ParsedDescription[] {
-  return descriptions.map(desc => extractCityFromDescription(desc))
+export function batchExtractCities(descriptions: string[], options?: ExtractCityOptions): ParsedDescription[] {
+  return descriptions.map(desc => extractCityFromDescription(desc, options))
 }
 
 /**

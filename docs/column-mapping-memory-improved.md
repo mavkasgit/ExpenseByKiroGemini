@@ -56,12 +56,12 @@ if (savedMapping && savedMapping.length === columnCount) {
   
   // Восстанавливаем назначения из сохраненной схемы
   savedMapping.forEach((column, index) => {
-    if (column.targetField !== 'skip') {
-      const fieldAssignment = newFieldAssignments.find(f => f.field === column.targetField)
+    column.targetFields.forEach(targetField => {
+      const fieldAssignment = newFieldAssignments.find(f => f.field === targetField)
       if (fieldAssignment) {
         fieldAssignment.assignedColumn = index
       }
-    }
+    })
   })
   
   setFieldAssignments(newFieldAssignments)

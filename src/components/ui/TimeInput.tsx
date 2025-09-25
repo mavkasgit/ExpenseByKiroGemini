@@ -136,9 +136,9 @@ export const TimeInput = forwardRef<TimeInputRef, TimeInputProps>(function TimeI
 
   return (
     <div className={cn('relative', className)} title={title}>
-      <div 
+      <div
         className={cn(
-          'flex items-center border rounded-md px-3 py-2 bg-white',
+          'flex items-center gap-1 border rounded-md px-1.5 py-2 bg-white',
           focused ? 'ring-2 ring-indigo-600 border-transparent' : 'border-gray-300',
           disabled && 'bg-gray-50 cursor-not-allowed'
         )}
@@ -163,13 +163,13 @@ export const TimeInput = forwardRef<TimeInputRef, TimeInputProps>(function TimeI
           onKeyDown={(e) => handleKeyDown(e, 'hours')}
           disabled={disabled}
           placeholder="ЧЧ"
-          className="w-8 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
+          className="w-7 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
           maxLength={2}
         />
         
         {/* Разделитель */}
-        <span className="text-gray-500 mx-1">:</span>
-        
+        <span className="text-gray-500 mx-0.5">:</span>
+
         {/* Поле минут */}
         <input
           ref={minutesRef}
@@ -180,18 +180,11 @@ export const TimeInput = forwardRef<TimeInputRef, TimeInputProps>(function TimeI
           onKeyDown={(e) => handleKeyDown(e, 'minutes')}
           disabled={disabled}
           placeholder="ММ"
-          className="w-8 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
+          className="w-7 text-center border-0 outline-none bg-transparent text-gray-900 placeholder:text-gray-400"
           maxLength={2}
         />
-        
-        {/* Иконка часов */}
-        <div className="ml-2 text-gray-400">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
       </div>
-      
+
 
     </div>
   )

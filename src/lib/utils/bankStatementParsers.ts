@@ -707,6 +707,51 @@ export function parseDate(dateStr: string): string {
 }
 
 /**
+ * Парсинг времени из различных форматов
+ */
+export function parseTimeValue(timeStr: string): string | null {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null
+  }
+
+  const cleanTime = timeStr
+    .trim()
+    .replace(/[\u00A0\s]+/g, '') // убираем пробелы и неразрывные пробелы
+
+  if (!cleanTime) {
+    return null
+  }
+
+  // Преобразуем распространенные разделители в двоеточие
+  const normalizedSeparators = cleanTime
+    .replace(/[.,;-]/g, ':')
+
+  // Формат HH:MM или H:MM
+  const timeWithColonMatch = normalizedSeparators.match(/^(\d{1,2}):(\d{2})$/)
+  if (timeWithColonMatch) {
+    const hours = parseInt(timeWithColonMatch[1], 10)
+    const minutes = parseInt(timeWithColonMatch[2], 10)
+
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+    }
+  }
+
+  // Формат HHMM или HMM (без разделителей)
+  const digitsOnly = normalizedSeparators.replace(/[^\d]/g, '')
+  if (digitsOnly.length === 3 || digitsOnly.length === 4) {
+    const hours = parseInt(digitsOnly.slice(0, digitsOnly.length - 2), 10)
+    const minutes = parseInt(digitsOnly.slice(-2), 10)
+
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+    }
+  }
+
+  return null
+}
+
+/**
  * Парсинг суммы из строки
  */
 export function parseAmount(amountStr: string): number {

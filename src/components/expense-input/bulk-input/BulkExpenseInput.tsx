@@ -12,13 +12,137 @@ import { ColumnMappingModal } from './ColumnMappingModal'
 
 import { createBulkExpenses } from '@/lib/actions/expenses'
 import { getCurrentDateISO } from '@/lib/utils/dateUtils'
-import { parseBankStatementFile, analyzeHTML, parseDateAndTime } from '@/lib/utils/bankStatementParsers'
+import {
+  parseBankStatementFile,
+  analyzeHTML,
+  parseDateAndTime,
+  parseCSV,
+  parseHTML,
+  parseAmount,
+  parseTimeValue
+} from '@/lib/utils/bankStatementParsers'
 import { extractCityFromDescription } from '@/lib/utils/cityParser'
-import type { Category, CreateExpenseData, ColumnMapping } from '@/types'
+import type {
+  Category,
+  CreateExpenseData,
+  ColumnMapping,
+  ColumnMappingField,
+  ParsedBankData
+} from '@/types'
 import type { BulkExpenseRowData } from '@/lib/validations/expenses'
 import type { TableInfo } from '@/lib/utils/bankStatementParsers'
 import { useCitySynonyms } from '@/hooks/useCitySynonyms'
 import { buildCityOptions, type CityOption } from '@/lib/utils/cityOptions'
+
+type SelectedTableMeta = Pick<
+  TableInfo,
+  'index' | 'description' | 'rowCount' | 'columnCount' | 'hasHeaders'
+>
+
+const HEADER_KEYWORDS = [
+  'amount',
+  'сумм',
+  'sum',
+  'debet',
+  'credit',
+  'дата',
+  'date',
+  'опис',
+  'description',
+  'city',
+  'город',
+  'time',
+  'время',
+  'note',
+  'примеч'
+]
+
+type AutoExtractionReviewItem = {
+  type: 'city-from-description'
+  rowIndex: number
+  columnLabel: string
+  sourceValue: string
+  extractedCity: string
+  cleanedDescription: string
+}
+
+type CityReviewItem = AutoExtractionReviewItem
+
+interface BuildExpensesStats {
+  totalRows: number
+  importedRows: number
+  skippedRows: number
+  autoDetectedCities: number
+  manualCities: number
+  detectedTimes: number
+  manualTimes: number
+}
+
+interface BuildExpensesResult {
+  expenses: BulkExpenseRowData[]
+  stats: BuildExpensesStats
+  reviewItems: AutoExtractionReviewItem[]
+}
+
+function normalizeRow(row: string[] = []): string[] {
+  return row.map(cell => (cell ?? '').trim())
+}
+
+function removeEmptyRows(rows: string[][], preserveFirstRow = false): string[][] {
+  return rows.filter((row, index) => {
+    if (preserveFirstRow && index === 0) {
+      return true
+    }
+    return row.some(cell => cell && cell.trim().length > 0)
+  })
+}
+
+function detectHeaderRow(headerRow: string[], firstDataRow?: string[]): boolean {
+  if (!headerRow || headerRow.length === 0) {
+    return false
+  }
+
+  const normalizedHeader = headerRow.map(cell => cell.trim().toLowerCase())
+  const headerHasKeywords = normalizedHeader.some(cell =>
+    HEADER_KEYWORDS.some(keyword => cell.includes(keyword))
+  )
+  if (headerHasKeywords) {
+    return true
+  }
+
+  const headerHasDigits = headerRow.some(cell => /\d/.test(cell))
+  const dataHasDigits = firstDataRow ? firstDataRow.some(cell => /\d/.test(cell)) : false
+
+  return !headerHasDigits && dataHasDigits
+}
+
+function prepareParsedDataset(parsed: ParsedBankData): { rows: string[][]; hasHeader: boolean } {
+  const headerRow = normalizeRow(parsed.headers || [])
+  const dataRows = (parsed.rows || []).map(normalizeRow)
+  const firstDataRow = dataRows[0]
+
+  const headerHasContent = headerRow.some(cell => cell.length > 0)
+  const hasHeader = headerHasContent && detectHeaderRow(headerRow, firstDataRow)
+
+  if (hasHeader) {
+    return {
+      rows: removeEmptyRows([headerRow, ...dataRows], true),
+      hasHeader: true
+    }
+  }
+
+  if (headerHasContent) {
+    return {
+      rows: removeEmptyRows([headerRow, ...dataRows]),
+      hasHeader: false
+    }
+  }
+
+  return {
+    rows: removeEmptyRows(dataRows),
+    hasHeader: false
+  }
+}
 
 interface BulkExpenseInputProps {
   categories: Category[]
@@ -30,6 +154,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [isColumnMappingOpen, setIsColumnMappingOpen] = useState(false)
   const [pastedData, setPastedData] = useState<string[][]>([])
+  const [hasHeaderRow, setHasHeaderRow] = useState(false)
   const [autoRedirect, setAutoRedirect] = useState(false) // Изначально выключен
   const [savedColumnMapping, setSavedColumnMapping] = useState<ColumnMapping[] | null>(null)
   const [isEditingColumnMapping, setIsEditingColumnMapping] = useState(false)
@@ -39,6 +164,13 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string>('')
   const [savedTableIndex, setSavedTableIndex] = useState<number | null>(null)
+  const [selectedTableMeta, setSelectedTableMeta] = useState<SelectedTableMeta | null>(null)
+  const [reviewModalState, setReviewModalState] = useState<{
+    mode: 'append' | 'directSave'
+    result: BuildExpensesResult
+  } | null>(null)
+  const [isReviewProcessing, setIsReviewProcessing] = useState(false)
+  const [isFileLoading, setIsFileLoading] = useState(false)
   const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -65,21 +197,24 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     try {
       const saved = localStorage.getItem('bulkExpenseColumnMapping')
       if (saved) {
-        const mapping = JSON.parse(saved)
-        setSavedColumnMapping(mapping)
-        return mapping
+        const parsed = JSON.parse(saved)
+        const normalized = normalizeColumnMapping(parsed)
+        setSavedColumnMapping(normalized.length > 0 ? normalized : null)
+        return normalized
       }
     } catch (error) {
       console.warn('Ошибка загрузки сохраненной схемы столбцов:', error)
     }
-    return null
+    setSavedColumnMapping(null)
+    return []
   }, [])
 
   // Сохранение схемы столбцов
   const saveColumnMapping = useCallback((mapping: ColumnMapping[]) => {
     try {
-      localStorage.setItem('bulkExpenseColumnMapping', JSON.stringify(mapping))
-      setSavedColumnMapping(mapping)
+      const sanitized = sanitizeColumnMapping(mapping)
+      localStorage.setItem('bulkExpenseColumnMapping', JSON.stringify(sanitized))
+      setSavedColumnMapping(sanitized.length > 0 ? sanitized : null)
     } catch (error) {
       console.warn('Ошибка сохранения схемы столбцов:', error)
     }
@@ -107,6 +242,16 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       setSavedTableIndex(tableIndex)
     } catch (error) {
       console.warn('Ошибка сохранения индекса таблицы:', error)
+    }
+  }, [])
+
+  const clearSavedTableIndex = useCallback(() => {
+    try {
+      localStorage.removeItem('bulkExpenseTableIndex')
+      setSavedTableIndex(null)
+      setSelectedTableMeta(null)
+    } catch (error) {
+      console.warn('Ошибка очистки индекса таблицы:', error)
     }
   }, [])
 
@@ -202,56 +347,388 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     return !hasErrors
   }, [expenses])
 
+  const appendSingleColumnExpenses = useCallback((rows: string[][], hasHeader: boolean, sourceLabel: string) => {
+    const dataRows = (hasHeader ? rows.slice(1) : rows)
+      .map(normalizeRow)
+      .filter(row => row[0] && row[0].trim())
+
+    if (dataRows.length === 0) {
+      showToast('Не найдены значения для описания', 'warning')
+      return 0
+    }
+
+    const newExpenses: BulkExpenseRowData[] = dataRows.map(row => ({
+      amount: 0,
+      description: row[0].trim(),
+      city: '',
+      city_id: null,
+      notes: '',
+      category_id: '',
+      expense_date: getCurrentDateISO(),
+      expense_time: '',
+      tempId: crypto.randomUUID()
+    }))
+
+    setExpenses(prev => [...prev, ...newExpenses])
+    showToast(`Добавлено ${newExpenses.length} описаний из ${sourceLabel}`, 'success')
+    return newExpenses.length
+  }, [showToast])
+
   // Обработка вставки из буфера обмена
   const handlePaste = useCallback(async (event: React.ClipboardEvent) => {
     event.preventDefault()
 
+    setSelectedTableMeta(null)
+    setAvailableTables([])
+    setFileContent(null)
+    setFileName('')
+
     try {
-      const pastedText = event.clipboardData.getData('text')
-      const lines = pastedText.split('\n').filter(line => line.trim())
+      const htmlData = event.clipboardData.getData('text/html')
+      if (htmlData && htmlData.includes('<table')) {
+        try {
+          const parsedFromHtml = parseHTML(htmlData)
+          const prepared = prepareParsedDataset(parsedFromHtml)
+          const dataset = prepared.rows
 
-      if (lines.length === 0) return
-
-      // Парсим данные в двумерный массив
-      const parsedData = lines.map(line =>
-        line.split('\t').map(cell => cell.trim()) // Разделение по табуляции (Excel/Google Sheets)
-      )
-
-      // Если данных больше одного столбца, всегда показываем модальное окно
-      if (parsedData[0] && parsedData[0].length > 1) {
-        setPastedData(parsedData)
-        setIsEditingColumnMapping(false) // Это не режим редактирования
-        setIsColumnMappingOpen(true)
-      } else {
-        // Если только один столбец, обрабатываем как описания
-        const newExpenses: BulkExpenseRowData[] = []
-
-        parsedData.forEach(row => {
-          if (row[0]) {
-            newExpenses.push({
-              amount: 0,
-              description: row[0],
-              city: '',
-              city_id: null,
-              notes: '',
-              category_id: '',
-              expense_date: getCurrentDateISO(),
-              tempId: crypto.randomUUID()
-            })
+          if (dataset.length === 0) {
+            showToast('Вставленная таблица не содержит данных', 'error')
+            return
           }
-        })
 
-        if (newExpenses.length > 0) {
-          setExpenses(prev => [...prev, ...newExpenses])
-          showToast('Данные успешно вставлены из буфера обмена', 'success')
+          const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset
+          if (dataRows.length === 0) {
+            showToast('Вставленная таблица содержит только заголовки', 'warning')
+            return
+          }
+
+          if (dataRows[0].length > 1) {
+            setPastedData(dataset)
+            setHasHeaderRow(prepared.hasHeader)
+            setIsEditingColumnMapping(false)
+            setIsColumnMappingOpen(true)
+            showToast(`Обнаружена таблица (${dataRows.length} строк). Назначьте столбцы и проверьте данные.`, 'success')
+            return
+          }
+
+          appendSingleColumnExpenses(dataset, prepared.hasHeader, 'вставленной таблицы')
+          setHasHeaderRow(false)
+          return
+        } catch (htmlError) {
+          console.warn('Не удалось обработать HTML из буфера обмена', htmlError)
         }
       }
+
+      const pastedText = event.clipboardData.getData('text')
+      if (!pastedText) {
+        showToast('Буфер обмена пуст', 'warning')
+        return
+      }
+
+      const parsed = parseCSV(pastedText)
+      const prepared = prepareParsedDataset(parsed)
+      const dataset = prepared.rows
+
+      if (dataset.length === 0) {
+        showToast('Вставленные данные пусты', 'error')
+        return
+      }
+
+      const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset
+      if (dataRows.length === 0) {
+        showToast('Не найдены строки с данными', 'error')
+        return
+      }
+
+      if (dataRows[0].length > 1) {
+        setPastedData(dataset)
+        setHasHeaderRow(prepared.hasHeader)
+        setIsEditingColumnMapping(false)
+        setIsColumnMappingOpen(true)
+        showToast(`Получены данные (${dataRows.length} строк). Проверьте соответствие столбцов.`, 'success')
+        return
+      }
+
+      appendSingleColumnExpenses(dataset, prepared.hasHeader, 'буфера обмена')
+      setHasHeaderRow(false)
     } catch (error) {
+      console.error('Ошибка при вставке данных', error)
       showToast('Ошибка при вставке данных', 'error')
+    }
+  }, [showToast, appendSingleColumnExpenses])
+
+
+
+  const buildExpensesFromMappedData = useCallback((mapping: ColumnMapping[]): BuildExpensesResult => {
+    const stats: BuildExpensesStats = {
+      totalRows: 0,
+      importedRows: 0,
+      skippedRows: 0,
+      autoDetectedCities: 0,
+      manualCities: 0,
+      detectedTimes: 0,
+      manualTimes: 0
+    }
+
+    if (pastedData.length === 0) {
+      return { expenses: [] as BulkExpenseRowData[], stats, reviewItems: [] }
+    }
+
+    const headerRow = hasHeaderRow ? pastedData[0] : null
+    const getColumnLabel = (index: number) => {
+      const headerValue = headerRow?.[index]?.trim()
+      if (headerValue) {
+        return headerValue
+      }
+
+      if (index >= 0 && index < 26) {
+        return `Столбец ${String.fromCharCode(65 + index)}`
+      }
+
+      return `Столбец ${index + 1}`
+    }
+
+    const mappingWithMeta = sanitizeColumnMapping(mapping).map((column, columnIndex) => ({
+      ...column,
+      columnIndex,
+      columnLabel: getColumnLabel(columnIndex),
+      targetFields: Array.isArray(column.targetFields)
+        ? column.targetFields.filter(isColumnMappingField)
+        : [],
+      hidden: Boolean(column.hidden)
+    }))
+
+    const rowsToProcess = (hasHeaderRow ? pastedData.slice(1) : pastedData)
+      .map(normalizeRow)
+      .filter(row => row.some(cell => cell && cell.trim().length > 0))
+
+    stats.totalRows = rowsToProcess.length
+
+    const newExpenses: BulkExpenseRowData[] = []
+    const reviewItems: AutoExtractionReviewItem[] = []
+
+    rowsToProcess.forEach((row, dataRowIndex) => {
+      const expenseData: Partial<BulkExpenseRowData> & { expense_time?: string | null } = {
+        tempId: crypto.randomUUID()
+      }
+
+      let descriptionColumnLabel: string | null = null
+      let descriptionSourceValue = ''
+      let descriptionColumnIndex: number | null = null
+
+      mappingWithMeta.forEach(column => {
+        if (column.hidden) {
+          return
+        }
+
+        if (!column.enabled || column.targetFields.length === 0) return
+
+        const cellValue = row[column.columnIndex]?.trim() || ''
+        if (!cellValue) return
+
+        column.targetFields.forEach(targetField => {
+          switch (targetField) {
+            case 'amount': {
+              try {
+                const parsedAmount = parseAmount(cellValue)
+                const normalizedAmount = Math.abs(parsedAmount)
+                if (normalizedAmount > 0) {
+                  expenseData.amount = normalizedAmount
+                }
+              } catch (error) {
+                console.warn('Не удалось распарсить сумму из столбца', cellValue, error)
+              }
+              break
+            }
+            case 'description':
+              expenseData.description = cellValue
+              descriptionColumnLabel = column.columnLabel
+              descriptionSourceValue = cellValue
+              descriptionColumnIndex = column.columnIndex
+              break
+            case 'city':
+              expenseData.city = cellValue
+              break
+            case 'expense_date': {
+              const dateTimeResult = parseDateAndTime(cellValue)
+              expenseData.expense_date = dateTimeResult.date
+              if (dateTimeResult.time && !expenseData.expense_time) {
+                expenseData.expense_time = dateTimeResult.time
+                stats.detectedTimes += 1
+              }
+              break
+            }
+            case 'expense_time': {
+              if (expenseData.expense_time) {
+                break
+              }
+              const parsedTime = parseTimeValue(cellValue)
+              if (parsedTime) {
+                expenseData.expense_time = parsedTime
+                stats.manualTimes += 1
+              }
+              break
+            }
+            case 'notes':
+              expenseData.notes = cellValue
+              break
+          }
+        })
+      })
+
+      if (expenseData.amount && expenseData.description) {
+        let cleanDescription = expenseData.description.trim()
+        let notes = expenseData.notes?.trim() || ''
+        let detectedCity: string | null = null
+
+        if (cleanDescription) {
+          const cityParseResult = extractCityFromDescription(cleanDescription)
+          if (cityParseResult.confidence > 0.6) {
+            cleanDescription = cityParseResult.cleanDescription
+            if (!expenseData.city && cityParseResult.displayCity) {
+              detectedCity = cityParseResult.displayCity
+            }
+          }
+        }
+
+        const providedCity = expenseData.city?.trim()
+        let finalCity = providedCity || detectedCity || ''
+        let resolvedCityId: string | null = null
+
+        if (providedCity) {
+          stats.manualCities += 1
+          const resolved = resolveCityByInput(providedCity)
+          if (resolved) {
+            finalCity = resolved.cityName
+            resolvedCityId = resolved.cityId
+          }
+        } else if (detectedCity) {
+          stats.autoDetectedCities += 1
+          const resolved = resolveCityByInput(detectedCity)
+          if (resolved) {
+            finalCity = resolved.cityName
+            resolvedCityId = resolved.cityId
+          }
+          const reviewNote = `Автодетект города: ${finalCity || detectedCity}`
+          if (!notes.includes(reviewNote)) {
+            notes = notes ? `${notes}\n${reviewNote}` : reviewNote
+          }
+          reviewItems.push({
+            type: 'city-from-description',
+            rowIndex: dataRowIndex + 1,
+            columnLabel:
+              descriptionColumnLabel || getColumnLabel(descriptionColumnIndex ?? 0),
+            sourceValue: descriptionSourceValue,
+            extractedCity: finalCity || detectedCity,
+            cleanedDescription: cleanDescription
+          })
+        }
+
+        newExpenses.push({
+          amount: expenseData.amount,
+          description: cleanDescription,
+          notes,
+          category_id: '',
+          expense_date: expenseData.expense_date || getCurrentDateISO(),
+          expense_time: expenseData.expense_time || null,
+          city: finalCity,
+          city_id: resolvedCityId,
+          tempId: expenseData.tempId!
+        })
+      }
+    })
+
+    stats.importedRows = newExpenses.length
+    stats.skippedRows = Math.max(stats.totalRows - stats.importedRows, 0)
+
+    return { expenses: newExpenses, stats, reviewItems }
+  }, [pastedData, hasHeaderRow, resolveCityByInput])
+
+  const appendExpensesWithStats = useCallback((result: BuildExpensesResult) => {
+    const { expenses: newExpenses, stats } = result
+
+    setExpenses(prev => [...prev, ...newExpenses])
+    setPastedData([])
+    setHasHeaderRow(false)
+
+    showToast(`Добавлено ${newExpenses.length} из ${stats.totalRows} записей`, 'success')
+
+    if (stats.autoDetectedCities > 0 || stats.detectedTimes > 0 || stats.manualTimes > 0) {
+      const details: string[] = []
+      if (stats.autoDetectedCities > 0) {
+        details.push(`автогорода: ${stats.autoDetectedCities}`)
+      }
+      if (stats.manualTimes + stats.detectedTimes > 0) {
+        details.push(`время: ${stats.manualTimes + stats.detectedTimes}`)
+      }
+      const suffix = details.length > 0 ? ` (${details.join(', ')})` : ''
+      showToast(`Пожалуйста, подтвердите автоматически заполненные поля${suffix}.`, 'info')
+    } else {
+      showToast('Проверьте импортированные данные перед сохранением.', 'info')
     }
   }, [showToast])
 
+  const saveImportedExpenses = useCallback(async (result: BuildExpensesResult) => {
+    const { expenses: newExpenses, stats } = result
 
+    const expensesToCreate: CreateExpenseData[] = newExpenses.map(expense => ({
+      amount: expense.amount,
+      description: expense.description,
+      notes: expense.notes,
+      category_id: expense.category_id || undefined,
+      expense_date: expense.expense_date,
+      expense_time: expense.expense_time || null,
+      city_id: expense.city_id || undefined,
+      city_input: expense.city?.trim() || undefined,
+      input_method: 'bulk_table' as const
+    }))
+
+    const resultAction = await createBulkExpenses(expensesToCreate)
+
+    if (resultAction.error) {
+      showToast(resultAction.error, 'error')
+      return false
+    }
+
+    if (resultAction.success && resultAction.stats) {
+      const { success, failed, uncategorized, total } = resultAction.stats
+
+      let message = `Создано ${success} из ${total} расходов`
+      if (failed > 0) {
+        message += `, ${failed} с ошибками`
+      }
+      if (uncategorized > 0) {
+        message += `, ${uncategorized} без категории`
+      }
+
+      showToast(message, success > 0 ? 'success' : 'error')
+
+      if (success > 0) {
+        setPastedData([])
+        setHasHeaderRow(false)
+
+        if (stats.autoDetectedCities > 0 || stats.detectedTimes > 0 || stats.manualTimes > 0) {
+          const details: string[] = []
+          if (stats.autoDetectedCities > 0) {
+            details.push(`автогорода: ${stats.autoDetectedCities}`)
+          }
+          if (stats.manualTimes + stats.detectedTimes > 0) {
+            details.push(`время: ${stats.manualTimes + stats.detectedTimes}`)
+          }
+          const suffix = details.length > 0 ? ` (${details.join(', ')})` : ''
+          showToast(`Автоматически заполненные поля сохранены${suffix}. Проверьте их в списке расходов.`, 'info')
+        }
+
+        if (autoRedirect) {
+          router.push('/expenses')
+        }
+      }
+
+      return success > 0
+    }
+
+    return false
+  }, [showToast, autoRedirect, router])
 
   // Применение настроек столбцов
   const handleColumnMappingApply = useCallback((mapping: ColumnMapping[]) => {
@@ -265,86 +742,32 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         return
       }
 
-      const newExpenses: BulkExpenseRowData[] = []
+      const result = buildExpensesFromMappedData(mapping)
 
-      pastedData.forEach(row => {
-        const expenseData: Partial<BulkExpenseRowData> = {
-          tempId: crypto.randomUUID()
+      if (result.expenses.length > 0) {
+        if (result.reviewItems.length > 0) {
+          setReviewModalState({
+            mode: 'append',
+            result
+          })
+          showToast('Найдены автоматически выделенные поля. Подтвердите импорт.', 'info')
+        } else {
+          appendExpensesWithStats(result)
         }
-
-        // Применяем маппинг столбцов
-        mapping.forEach((column, index) => {
-          if (!column.enabled || column.targetField === 'skip') return
-
-          const cellValue = row[index]?.trim() || ''
-          if (!cellValue) return
-
-          switch (column.targetField) {
-            case 'amount':
-              const amount = parseFloat(cellValue.replace(/[^\d.,]/g, '').replace(',', '.'))
-              if (!isNaN(amount)) {
-                expenseData.amount = amount
-              }
-              break
-            case 'description':
-              expenseData.description = cellValue
-              break
-            case 'city':
-              expenseData.city = cellValue
-              break
-            case 'expense_date':
-              const dateTimeResult1 = parseDateAndTime(cellValue)
-              expenseData.expense_date = dateTimeResult1.date
-              expenseData.expense_time = dateTimeResult1.time
-              break
-            case 'notes':
-              expenseData.notes = cellValue
-              break
-          }
-        })
-
-        // Добавляем только если есть сумма и описание
-        if (expenseData.amount && expenseData.description) {
-          // Извлекаем город из описания и очищаем описание
-          let cleanDescription = expenseData.description
-          let notes = expenseData.notes || ''
-          let detectedCity: string | null = null
-
-          const cityParseResult = extractCityFromDescription(expenseData.description)
-          if (cityParseResult.confidence > 0.6) {
-            cleanDescription = cityParseResult.cleanDescription
-            if (!expenseData.city && cityParseResult.city) {
-              detectedCity = cityParseResult.displayCity || cityParseResult.city
-            }
-          }
-
-        newExpenses.push({
-          amount: expenseData.amount,
-          description: cleanDescription,
-          notes,
-          category_id: '',
-          expense_date: expenseData.expense_date || getCurrentDateISO(),
-          expense_time: expenseData.expense_time || null,
-          city: expenseData.city?.trim() || detectedCity || '',
-          city_id: null,
-          tempId: expenseData.tempId!
-        })
-        }
-      })
-
-      if (newExpenses.length > 0) {
-        setExpenses(prev => [...prev, ...newExpenses])
-        showToast(`Добавлено ${newExpenses.length} записей с настроенным маппингом столбцов`, 'success')
       } else {
         showToast('Не удалось обработать данные с текущими настройками столбцов', 'error')
       }
-
-      // Очищаем временные данные
-      setPastedData([])
     } catch (error) {
+      console.error('Ошибка при обработке данных маппинга', error)
       showToast('Ошибка при обработке данных', 'error')
     }
-  }, [pastedData, showToast, saveColumnMapping, isEditingColumnMapping])
+  }, [
+    saveColumnMapping,
+    isEditingColumnMapping,
+    showToast,
+    buildExpensesFromMappedData,
+    appendExpensesWithStats
+  ])
 
   // Применение настроек столбцов и прямое сохранение
   const handleColumnMappingApplyAndSave = useCallback(async (mapping: ColumnMapping[]) => {
@@ -352,155 +775,168 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       // Сохраняем схему столбцов для будущего использования
       saveColumnMapping(mapping)
 
-      const newExpenses: BulkExpenseRowData[] = []
+      const result = buildExpensesFromMappedData(mapping)
 
-      pastedData.forEach(row => {
-        const expenseData: Partial<BulkExpenseRowData> = {
-          tempId: crypto.randomUUID()
-        }
-
-        // Применяем маппинг столбцов
-        mapping.forEach((column, index) => {
-          if (!column.enabled || column.targetField === 'skip') return
-
-          const cellValue = row[index]?.trim() || ''
-          if (!cellValue) return
-
-          switch (column.targetField) {
-            case 'amount':
-              const amount = parseFloat(cellValue.replace(/[^\d.,]/g, '').replace(',', '.'))
-              if (!isNaN(amount)) {
-                expenseData.amount = amount
-              }
-              break
-            case 'description':
-              expenseData.description = cellValue
-              break
-            case 'city':
-              expenseData.city = cellValue
-              break
-            case 'expense_date':
-              const dateTimeResult2 = parseDateAndTime(cellValue)
-              expenseData.expense_date = dateTimeResult2.date
-              expenseData.expense_time = dateTimeResult2.time
-              break
-            case 'notes':
-              expenseData.notes = cellValue
-              break
-          }
-        })
-
-        // Добавляем только если есть сумма и описание
-        if (expenseData.amount && expenseData.description) {
-          // Извлекаем город из описания и очищаем описание
-          let cleanDescription = expenseData.description
-          let notes = expenseData.notes || ''
-          let detectedCity: string | null = null
-
-          const cityParseResult = extractCityFromDescription(expenseData.description)
-          if (cityParseResult.confidence > 0.6) {
-            cleanDescription = cityParseResult.cleanDescription
-            if (!expenseData.city && cityParseResult.city) {
-              detectedCity = cityParseResult.displayCity || cityParseResult.city
-            }
-          }
-
-        newExpenses.push({
-          amount: expenseData.amount,
-          description: cleanDescription,
-          notes,
-          category_id: '',
-          expense_date: expenseData.expense_date || getCurrentDateISO(),
-          expense_time: expenseData.expense_time || null,
-          city: expenseData.city?.trim() || detectedCity || '',
-          city_id: null,
-          tempId: expenseData.tempId!
-        })
-        }
-      })
-
-      if (newExpenses.length === 0) {
+      if (result.expenses.length === 0) {
         showToast('Не удалось обработать данные с текущими настройками столбцов', 'error')
         return
       }
 
-      // Сразу сохраняем расходы
-      const expensesToCreate: CreateExpenseData[] = newExpenses.map(expense => ({
-        amount: expense.amount,
-        description: expense.description,
-        notes: expense.notes,
-        category_id: expense.category_id || undefined,
-        expense_date: expense.expense_date,
-        expense_time: expense.expense_time || null,
-        city_id: expense.city_id || undefined,
-        city_input: expense.city?.trim() || undefined,
-        input_method: 'bulk_table' as const
-      }))
-
-      const result = await createBulkExpenses(expensesToCreate)
-
-      if (result.error) {
-        showToast(result.error, 'error')
+      if (result.reviewItems.length > 0) {
+        setReviewModalState({
+          mode: 'directSave',
+          result
+        })
+        showToast('Найдены автоматически выделенные поля. Подтвердите сохранение.', 'info')
         return
       }
 
-      if (result.success && result.stats) {
-        const { success, failed, uncategorized, total } = result.stats
-
-        let message = `Создано ${success} из ${total} расходов`
-        if (failed > 0) {
-          message += `, ${failed} с ошибками`
-        }
-        if (uncategorized > 0) {
-          message += `, ${uncategorized} без категории`
-        }
-
-        showToast(message, success > 0 ? 'success' : 'error')
-
-        // Очищаем данные при успехе
-        if (success > 0) {
-          setPastedData([])
-
-          // Перенаправляем на страницу расходов если включен автопереход
-          if (autoRedirect) {
-            router.push('/expenses')
-          }
-        }
-      }
+      await saveImportedExpenses(result)
 
     } catch (error) {
       showToast('Ошибка при сохранении расходов', 'error')
     }
-  }, [pastedData, showToast, saveColumnMapping, autoRedirect, router])
+  }, [saveColumnMapping, buildExpensesFromMappedData, showToast, saveImportedExpenses])
+
+  const reviewSummary = useMemo(() => {
+    if (!reviewModalState) {
+      return { cityItems: [] as CityReviewItem[] }
+    }
+
+    const cityItems = reviewModalState.result.reviewItems.filter(
+      (item): item is CityReviewItem => item.type === 'city-from-description'
+    )
+
+    return { cityItems }
+  }, [reviewModalState])
+
+  const hasPendingDataset = pastedData.length > 0
+
+  const handleReviewCancel = useCallback(() => {
+    if (!reviewModalState) {
+      return
+    }
+
+    if (reviewModalState.mode === 'append') {
+      showToast('Импорт отменён. При необходимости скорректируйте назначение столбцов.', 'info')
+      if (hasPendingDataset) {
+        setIsEditingColumnMapping(false)
+        setIsColumnMappingOpen(true)
+      }
+    } else {
+      showToast('Прямое сохранение отменено.', 'info')
+    }
+
+    setReviewModalState(null)
+  }, [
+    reviewModalState,
+    showToast,
+    hasPendingDataset,
+    setIsEditingColumnMapping,
+    setIsColumnMappingOpen
+  ])
+
+  const handleReviewConfirm = useCallback(async () => {
+    if (!reviewModalState) {
+      return
+    }
+
+    if (reviewModalState.mode === 'append') {
+      const resultToApply = reviewModalState.result
+      setReviewModalState(null)
+      appendExpensesWithStats(resultToApply)
+      return
+    }
+
+    const resultToSave = reviewModalState.result
+    setIsReviewProcessing(true)
+    try {
+      const success = await saveImportedExpenses(resultToSave)
+      if (success) {
+        setReviewModalState(null)
+      }
+    } finally {
+      setIsReviewProcessing(false)
+    }
+  }, [reviewModalState, appendExpensesWithStats, saveImportedExpenses])
+
+  const totalReviewCount = reviewSummary.cityItems.length
+  const cityPreview = reviewSummary.cityItems.slice(0, 6)
+  const cityOverflow = reviewSummary.cityItems.length - cityPreview.length
+  const reviewPrimaryLabel = reviewModalState?.mode === 'directSave'
+    ? (isReviewProcessing ? 'Сохранение...' : 'Подтвердить и сохранить')
+    : 'Подтвердить импорт'
 
   // Обработка выбора таблицы из HTML файла
-  const handleTableSelection = useCallback(async (tableIndex: number) => {
-    if (!fileContent || !fileName) return
-    
-    setShowTableSelection(false)
-    
-    // Сохраняем выбранный индекс таблицы
-    saveTableIndex(tableIndex)
-    
-    try {
-      const parsed = await parseBankStatementFile(new File([fileContent], fileName), tableIndex)
-      
-      if (parsed.totalRows === 0) {
-        showToast('Выбранная таблица не содержит данных', 'error')
+  const handleTableSelection = useCallback(
+    async (tableIndex: number, tableInfo?: TableInfo) => {
+      if (!fileContent || !fileName) {
+        showToast('Сначала загрузите файл с выпиской', 'error')
         return
       }
 
-      // Преобразуем данные в формат для ColumnMappingModal
-      const parsedData = [parsed.headers, ...parsed.rows]
-      setPastedData(parsedData)
-      setIsEditingColumnMapping(false)
-      setIsColumnMappingOpen(true)
-      
-      showToast(`Загружено ${parsed.totalRows} записей из таблицы`, 'success')
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Ошибка обработки таблицы', 'error')
-    }
-  }, [fileContent, fileName, showToast, saveTableIndex])
+      setIsFileLoading(true)
+      setShowTableSelection(false)
+
+      // Сохраняем выбранный индекс таблицы
+      saveTableIndex(tableIndex)
+
+      const resolvedInfo =
+        tableInfo ??
+        availableTables.find(table => table.index === tableIndex) ??
+        availableTables[tableIndex]
+
+      if (resolvedInfo) {
+        setSelectedTableMeta({
+          index: resolvedInfo.index,
+          description: resolvedInfo.description,
+          rowCount: resolvedInfo.rowCount,
+          columnCount: resolvedInfo.columnCount,
+          hasHeaders: resolvedInfo.hasHeaders
+        })
+      }
+
+      try {
+        const parsed = await parseBankStatementFile(new File([fileContent], fileName), tableIndex)
+        const prepared = prepareParsedDataset(parsed)
+        const dataset = prepared.rows
+
+        if (dataset.length === 0) {
+          showToast('Выбранная таблица не содержит данных', 'error')
+          return
+        }
+
+        const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset
+        if (dataRows.length === 0) {
+          showToast('Выбранная таблица содержит только заголовки', 'warning')
+          return
+        }
+
+        if (dataRows[0].length > 1) {
+          setPastedData(dataset)
+          setHasHeaderRow(prepared.hasHeader)
+          setIsEditingColumnMapping(false)
+          setIsColumnMappingOpen(true)
+          showToast(`Загружено ${dataRows.length} строк из выбранной таблицы`, 'success')
+        } else {
+          appendSingleColumnExpenses(dataset, prepared.hasHeader, 'выбранной таблицы')
+          setHasHeaderRow(false)
+        }
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Ошибка обработки таблицы', 'error')
+      } finally {
+        setIsFileLoading(false)
+      }
+    },
+    [
+      appendSingleColumnExpenses,
+      availableTables,
+      fileContent,
+      fileName,
+      saveTableIndex,
+      showToast
+    ]
+  )
 
   // Загрузка из файла
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -508,36 +944,40 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     if (!file) return
 
     try {
+      setIsFileLoading(true)
       const fileExtension = file.name.split('.').pop()?.toLowerCase()
-      const content = await file.text()
-      
-      // Сохраняем информацию о файле
       setFileName(file.name)
+      const content = await file.text()
+
+      // Сохраняем информацию о файле
       setFileContent(content)
+      setSelectedTableMeta(null)
+      setAvailableTables([])
 
       // Для HTML файлов показываем выбор таблицы
       if (fileExtension === 'html' || fileExtension === 'htm') {
         try {
           const analysis = analyzeHTML(content)
-          
+
           if (analysis.tables.length === 0) {
             showToast('В HTML файле не найдено таблиц с данными', 'error')
             return
           }
-          
+
+          setAvailableTables(analysis.tables)
+
           if (analysis.tables.length === 1) {
             // Если только одна таблица, используем её сразу
-            await handleTableSelection(0)
+            await handleTableSelection(0, analysis.tables[0])
           } else {
             // Проверяем, есть ли сохраненный индекс таблицы и подходит ли он
-            if (savedTableIndex !== null && 
-                savedTableIndex >= 0 && 
+            if (savedTableIndex !== null &&
+                savedTableIndex >= 0 &&
                 savedTableIndex < analysis.tables.length) {
               // Используем сохраненную таблицу автоматически
-              await handleTableSelection(savedTableIndex)
+              await handleTableSelection(savedTableIndex, analysis.tables[savedTableIndex])
             } else {
               // Показываем выбор таблицы
-              setAvailableTables(analysis.tables)
               setShowTableSelection(true)
             }
           }
@@ -546,62 +986,42 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           return
         }
       } else {
-        // Для других форматов используем существующую логику
-        const lines = content.split('\n').filter(line => line.trim())
+        const parsed = await parseBankStatementFile(file)
+        const prepared = prepareParsedDataset(parsed)
+        const dataset = prepared.rows
 
-        if (lines.length === 0) {
+        if (dataset.length === 0) {
           showToast('Файл пуст', 'error')
           return
         }
 
-        // Пропускаем первую строку если она похожа на заголовок
-        const startIndex = lines[0]?.toLowerCase().includes('сумма') ||
-          lines[0]?.toLowerCase().includes('amount') ? 1 : 0
+        const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset
+        if (dataRows.length === 0) {
+          showToast('В файле найдены только заголовки без данных', 'warning')
+          return
+        }
 
-        // Парсим данные в двумерный массив
-        const parsedData = lines.slice(startIndex).map(line =>
-          line.split(/[,;\t]/).map(cell => cell.trim()) // Разделители: запятая, точка с запятой, табуляция
-        )
-
-        // Если данных больше одного столбца, показываем модальное окно настройки
-        if (parsedData[0] && parsedData[0].length > 1) {
-          setPastedData(parsedData)
+        if (dataRows[0].length > 1) {
+          setPastedData(dataset)
+          setHasHeaderRow(prepared.hasHeader)
           setIsEditingColumnMapping(false)
           setIsColumnMappingOpen(true)
+          showToast(`Загружено ${dataRows.length} строк из файла`, 'success')
         } else {
-          // Если только один столбец, обрабатываем как описания
-          const newExpenses: BulkExpenseRowData[] = []
-
-          parsedData.forEach(row => {
-            if (row[0]) {
-              newExpenses.push({
-                amount: 0,
-                description: row[0],
-                city: '',
-                city_id: null,
-                notes: '',
-                category_id: '',
-                expense_date: getCurrentDateISO(),
-                tempId: crypto.randomUUID()
-              })
-            }
-          })
-
-          if (newExpenses.length > 0) {
-            setExpenses(prev => [...prev, ...newExpenses])
-            showToast(`Загружено ${newExpenses.length} записей из файла`, 'success')
-          }
+          appendSingleColumnExpenses(dataset, prepared.hasHeader, 'файла')
+          setHasHeaderRow(false)
         }
       }
     } catch (error) {
       showToast('Ошибка при загрузке файла', 'error')
     } finally {
+      setIsFileLoading(false)
       // Очищаем input для возможности повторной загрузки того же файла
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     }
-  }, [showToast, handleTableSelection, savedTableIndex])
+  }, [showToast, handleTableSelection, savedTableIndex, appendSingleColumnExpenses])
 
   // Прямое сохранение без предпросмотра
   const handleDirectSave = useCallback(async () => {
@@ -672,6 +1092,10 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const handleClear = useCallback(() => {
     setExpenses([])
     setValidationErrors({})
+    setSelectedTableMeta(null)
+    setAvailableTables([])
+    setFileContent(null)
+    setFileName('')
   }, [])
 
   return (
@@ -707,9 +1131,42 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               variant="outline"
               size="sm"
               onClick={() => fileInputRef.current?.click()}
+              disabled={isFileLoading}
+              className={isFileLoading ? 'cursor-wait opacity-80' : undefined}
             >
-              📁 Загрузить файл
+              {isFileLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Обработка...
+                </span>
+              ) : (
+                '📁 Загрузить файл'
+              )}
             </Button>
+
+            {isFileLoading && (
+              <div
+                className="flex items-center gap-2 text-sm text-blue-700 basis-full sm:basis-auto"
+                aria-live="polite"
+              >
+                <span className="h-3 w-3 animate-spin rounded-full border border-blue-400 border-t-transparent" />
+                <span>
+                  {fileName ? `Обрабатываем «${fileName}»...` : 'Подготавливаем данные файла...'}
+                </span>
+              </div>
+            )}
+
+            {fileContent && availableTables.length > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTableSelection(true)}
+                disabled={isFileLoading}
+                className={isFileLoading ? 'cursor-wait opacity-80' : undefined}
+              >
+                📊 Выбрать таблицу
+              </Button>
+            )}
 
             <Button
               variant="outline"
@@ -718,7 +1175,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                 // Проверяем, есть ли сохраненная схема
                 const savedMapping = loadSavedColumnMapping()
 
-                if (savedMapping && savedMapping.length > 0) {
+                if (savedMapping.length > 0) {
                   // Создаем только заголовки столбцов на основе сохраненной схемы
                   const sampleData = [
                     savedMapping.map((_item: ColumnMapping, index: number) => `Столбец ${String.fromCharCode(65 + index)}`)
@@ -731,6 +1188,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                   ]
                   setPastedData(sampleData)
                 }
+                setHasHeaderRow(false)
                 setIsEditingColumnMapping(true)
                 setIsColumnMappingOpen(true)
               }}
@@ -739,6 +1197,19 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               ⚙️ Настройка столбцов <span className={`ml-1 text-xs ${isMounted && (savedColumnMapping || savedTableIndex !== null) ? 'opacity-100' : 'opacity-0'}`}>●</span>
             </Button>
 
+            {isMounted && savedTableIndex !== null && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  clearSavedTableIndex()
+                  showToast('Сохраненный выбор таблицы очищен', 'info')
+                }}
+              >
+                ♻️ Сбросить выбор таблицы
+              </Button>
+            )}
+
             <input
               ref={fileInputRef}
               type="file"
@@ -746,6 +1217,16 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               onChange={handleFileUpload}
               className="hidden"
             />
+
+            {selectedTableMeta && (
+              <div className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                <span className="font-medium">Текущая таблица:</span> {selectedTableMeta.description}
+                <span className="ml-2 text-blue-600">
+                  ({selectedTableMeta.rowCount} строк, {selectedTableMeta.columnCount} столбцов,
+                  {selectedTableMeta.hasHeaders ? ' есть заголовок' : ' без заголовка'})
+                </span>
+              </div>
+            )}
 
             {expenses.length > 0 && (
               <>
@@ -822,14 +1303,116 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         </div>
       </Card>
 
+      {/* Модальное окно подтверждения автоизвлечения */}
+      <Modal
+        isOpen={Boolean(reviewModalState)}
+        onClose={handleReviewCancel}
+        title="Проверка автоматически выделенных полей"
+        size="xl"
+      >
+        {reviewModalState && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+              <p className="text-sm text-blue-900">
+                Система выделила дополнительные данные в {totalReviewCount}{' '}
+                {totalReviewCount === 1 ? 'строке' : 'строках'}. Проверьте результаты и подтвердите, что всё выглядит корректно.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              {reviewSummary.cityItems.length > 0 && (
+                <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 text-blue-800 px-3 py-1 text-sm">
+                  📍 Города из описания: {reviewSummary.cityItems.length}
+                </span>
+              )}
+            </div>
+
+            {reviewSummary.cityItems.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="font-medium text-gray-900">Города, извлечённые из описания</h4>
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Строка</th>
+                          <th className="px-3 py-2 text-left">Столбец</th>
+                          <th className="px-3 py-2 text-left">Исходное значение</th>
+                          <th className="px-3 py-2 text-left">Описание после очистки</th>
+                          <th className="px-3 py-2 text-left">Автоопределённый город</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {cityPreview.map((item, index) => (
+                          <tr key={`city-${index}-${item.rowIndex}`} className="bg-white">
+                            <td className="px-3 py-2 align-top text-gray-500">{item.rowIndex}</td>
+                            <td className="px-3 py-2 align-top text-gray-700">{item.columnLabel}</td>
+                            <td className="px-3 py-2 align-top text-gray-900 whitespace-pre-wrap break-words">
+                              {item.sourceValue || '—'}
+                            </td>
+                            <td className="px-3 py-2 align-top text-gray-900 whitespace-pre-wrap break-words">
+                              {item.cleanedDescription || '—'}
+                            </td>
+                            <td className="px-3 py-2 align-top text-blue-700 font-semibold">
+                              {item.extractedCity}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {cityOverflow > 0 && (
+                    <div className="px-3 py-2 text-xs text-gray-500 bg-gray-50">
+                      и ещё {cityOverflow} {cityOverflow === 1 ? 'строка' : 'строк'} с автоопределением города
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+
+            <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-gray-500">
+                Подтверждение применит назначенные столбцы и перенесёт данные в таблицу расходов.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={handleReviewCancel}
+                  disabled={isReviewProcessing}
+                >
+                  Вернуться
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleReviewConfirm}
+                  disabled={isReviewProcessing}
+                >
+                  {reviewModalState.mode === 'directSave' && isReviewProcessing ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {reviewPrimaryLabel}
+                    </span>
+                  ) : (
+                    reviewPrimaryLabel
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Модальное окно выбора таблицы */}
       <Modal
         isOpen={showTableSelection}
         onClose={() => {
           setShowTableSelection(false)
-          setAvailableTables([])
-          setFileContent(null)
-          setFileName('')
+          if (!selectedTableMeta) {
+            setAvailableTables([])
+            setFileContent(null)
+            setFileName('')
+          }
         }}
         title="Выбор таблицы"
         size="xl"
@@ -839,17 +1422,40 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
             <div className="text-sm text-gray-600">
               Найдено {availableTables.length} таблиц. Выберите таблицу для импорта:
             </div>
-            
+
+            {isFileLoading && (
+              <div className="flex items-center gap-2 text-sm text-blue-700" aria-live="polite">
+                <span className="h-3 w-3 animate-spin rounded-full border border-blue-400 border-t-transparent" />
+                Обрабатываем выбранную таблицу...
+              </div>
+            )}
+
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {availableTables.map((table, index) => (
                 <div
                   key={index}
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                    savedTableIndex === index 
-                      ? 'border-blue-500 bg-blue-50' 
+                  className={`p-4 border rounded-lg transition-colors ${
+                    savedTableIndex === index
+                      ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                  onClick={() => handleTableSelection(index)}
+                  } ${isFileLoading ? 'cursor-wait opacity-60' : 'cursor-pointer'}`}
+                  role="button"
+                  tabIndex={isFileLoading ? -1 : 0}
+                  aria-disabled={isFileLoading}
+                  onClick={() => {
+                    if (!isFileLoading) {
+                      handleTableSelection(index)
+                    }
+                  }}
+                  onKeyDown={event => {
+                    if (isFileLoading) {
+                      return
+                    }
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleTableSelection(index)
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -859,6 +1465,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                       <p className="text-sm text-gray-500">
                         {table.rowCount} строк, {table.columnCount} столбцов
                       </p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {table.hasHeaders ? 'Содержит строку заголовков' : 'Без отдельной строки заголовков'}
+                      </p>
                     </div>
                     {savedTableIndex === index && (
                       <div className="text-blue-600 text-sm">
@@ -866,6 +1475,31 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                       </div>
                     )}
                   </div>
+
+                  {table.preview.length > 0 && (
+                    <div className="mt-3 overflow-hidden rounded-md border bg-white">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-xs">
+                          <tbody className="divide-y divide-gray-100">
+                            {table.preview.map((previewRow, previewIndex) => (
+                              <tr key={previewIndex} className="bg-white">
+                                {previewRow.map((cell, cellIndex) => (
+                                  <td
+                                    key={cellIndex}
+                                    className={`px-3 py-2 whitespace-nowrap ${
+                                      previewIndex === 0 ? 'font-medium text-gray-900' : 'text-gray-600'
+                                    }`}
+                                  >
+                                    {cell || '—'}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -893,6 +1527,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         onClose={() => {
           setIsColumnMappingOpen(false)
           setPastedData([])
+          setHasHeaderRow(false)
           setIsEditingColumnMapping(false)
         }}
         onApply={handleColumnMappingApply}
@@ -903,4 +1538,58 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       />
     </div>
   )
+}
+
+const COLUMN_MAPPING_FIELDS: ColumnMappingField[] = [
+  'amount',
+  'description',
+  'city',
+  'expense_date',
+  'expense_time',
+  'notes'
+]
+
+const COLUMN_MAPPING_FIELD_SET = new Set<ColumnMappingField>(COLUMN_MAPPING_FIELDS)
+
+function isColumnMappingField(value: unknown): value is ColumnMappingField {
+  return typeof value === 'string' && COLUMN_MAPPING_FIELD_SET.has(value as ColumnMappingField)
+}
+
+function normalizeColumnMapping(raw: unknown): ColumnMapping[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  return raw.map((item, index) => {
+    const candidate = item as Partial<ColumnMapping> & { targetField?: unknown }
+
+    const directTargets = Array.isArray(candidate?.targetFields)
+      ? candidate.targetFields.filter(isColumnMappingField)
+      : []
+
+    const legacyTarget = isColumnMappingField(candidate?.targetField)
+      ? [candidate.targetField]
+      : []
+
+    const combinedTargets = [...directTargets, ...legacyTarget]
+    const uniqueTargets = Array.from(new Set(combinedTargets))
+
+    const normalizedTargets = uniqueTargets.filter(isColumnMappingField)
+
+    const normalizedEnabled = typeof candidate?.enabled === 'boolean'
+      ? candidate.enabled && normalizedTargets.length > 0
+      : normalizedTargets.length > 0
+
+    return {
+      sourceIndex: typeof candidate?.sourceIndex === 'number' ? candidate.sourceIndex : index,
+      targetFields: normalizedEnabled ? normalizedTargets : [],
+      enabled: normalizedEnabled && normalizedTargets.length > 0,
+      preview: typeof candidate?.preview === 'string' ? candidate.preview : '',
+      hidden: Boolean(candidate?.hidden)
+    }
+  })
+}
+
+function sanitizeColumnMapping(mapping: ColumnMapping[]): ColumnMapping[] {
+  return normalizeColumnMapping(mapping)
 }
