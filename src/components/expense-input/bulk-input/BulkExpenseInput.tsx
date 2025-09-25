@@ -11,6 +11,7 @@ import { BulkExpensePreview } from './BulkExpensePreview'
 import { ColumnMappingModal } from './ColumnMappingModal'
 
 import { createBulkExpenses } from '@/lib/actions/expenses'
+import { createBankStatement } from '@/lib/actions/bankStatements'
 import { getCurrentDateISO } from '@/lib/utils/dateUtils'
 import {
   parseBankStatementFile,
@@ -671,6 +672,24 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
   const saveImportedExpenses = useCallback(async (result: BuildExpensesResult) => {
     const { expenses: newExpenses, stats } = result
 
+    let batchId: string | undefined = undefined;
+    if (fileName) {
+        batchId = crypto.randomUUID();
+        const fileType = fileName.split('.').pop()?.toLowerCase() || 'unknown';
+        
+        const statementResult = await createBankStatement({
+            id: batchId,
+            filename: fileName,
+            file_type: fileType,
+            total_records: newExpenses.length,
+        });
+
+        if (statementResult.error) {
+            showToast(`Ошибка создания записи о выписке: ${statementResult.error}`, 'error');
+            return false;
+        }
+    }
+
     const expensesToCreate: CreateExpenseData[] = newExpenses.map(expense => ({
       amount: expense.amount,
       description: expense.description,
@@ -680,7 +699,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       expense_time: expense.expense_time || null,
       city_id: expense.city_id || undefined,
       city_input: expense.city?.trim() || undefined,
-      input_method: 'bulk_table' as const
+      input_method: 'bulk_table' as const,
+      batch_id: batchId
     }))
 
     const resultAction = await createBulkExpenses(expensesToCreate)
@@ -706,6 +726,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       if (success > 0) {
         setPastedData([])
         setHasHeaderRow(false)
+        setFileName('')
 
         if (stats.autoDetectedCities > 0 || stats.detectedTimes > 0 || stats.manualTimes > 0) {
           const details: string[] = []
@@ -728,7 +749,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     }
 
     return false
-  }, [showToast, autoRedirect, router])
+  }, [showToast, autoRedirect, router, fileName])
 
   // Применение настроек столбцов
   const handleColumnMappingApply = useCallback((mapping: ColumnMapping[]) => {
@@ -1038,6 +1059,25 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     setIsSubmitting(true)
 
     try {
+      let batchId: string | undefined = undefined;
+      if (fileName) {
+          batchId = crypto.randomUUID();
+          const fileType = fileName.split('.').pop()?.toLowerCase() || 'unknown';
+          
+          const statementResult = await createBankStatement({
+              id: batchId,
+              filename: fileName,
+              file_type: fileType,
+              total_records: expenses.length,
+          });
+
+          if (statementResult.error) {
+              showToast(`Ошибка создания записи о выписке: ${statementResult.error}`, 'error');
+              setIsSubmitting(false);
+              return;
+          }
+      }
+
       // Преобразуем данные для отправки
       const expensesToCreate: CreateExpenseData[] = expenses.map(expense => ({
         amount: expense.amount,
@@ -1048,7 +1088,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         expense_time: expense.expense_time || null,
         city_id: expense.city_id || undefined,
         city_input: expense.city?.trim() || undefined,
-        input_method: 'bulk_table' as const
+        input_method: 'bulk_table' as const,
+        batch_id: batchId
       }))
 
       const result = await createBulkExpenses(expensesToCreate)
@@ -1074,6 +1115,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         // Очищаем форму при успехе
         if (success > 0) {
           setExpenses([])
+          setFileName('')
 
           // Перенаправляем на страницу расходов только если включен автопереход
           if (autoRedirect) {
@@ -1086,7 +1128,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     } finally {
       setIsSubmitting(false)
     }
-  }, [expenses, validateExpenses, showToast, router, autoRedirect])
+  }, [expenses, validateExpenses, showToast, router, autoRedirect, fileName])
 
   // Очистить все данные
   const handleClear = useCallback(() => {

@@ -427,9 +427,6 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       return { error: 'Нет данных для создания' }
     }
 
-    // Генерируем batch_id для группировки
-    const batchId = crypto.randomUUID()
-    
     // ОПТИМИЗАЦИЯ: Получаем все ключевые слова один раз
     const { data: keywords } = await supabase
       .from('category_keywords')
@@ -494,7 +491,6 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
         const validatedData = expenseSchema.parse({
           ...expense,
           input_method: 'bulk_table',
-          batch_id: batchId
         })
 
         // Быстрая категоризация в памяти
@@ -522,7 +518,7 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
           expense_date: validatedData.expense_date,
           expense_time: validatedData.expense_time || null,
           input_method: 'bulk_table',
-          batch_id: batchId,
+          batch_id: validatedData.batch_id || null,
           status,
           matched_keywords: matchedKeywords.length > 0 ? matchedKeywords : null,
           auto_categorized: autoCategorized,
@@ -570,7 +566,6 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     return { 
       success: true, 
       data: createdExpenses,
-      batchId,
       stats: {
         success: successCount,
         failed: failedCount,
