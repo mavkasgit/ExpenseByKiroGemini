@@ -81,15 +81,32 @@ export function QuickExpenseForm({
 
   const filteredCityOptions = useMemo(() => {
     const query = formData.cityInput.trim().toLowerCase()
-    const base = query
-      ? cityOptions.filter((option) =>
-          option.cityName.toLowerCase().includes(query) ||
-          option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
-        )
-      : cityOptions
+
+    // If the input is empty, show favorite cities (up to 6).
+    if (!query) {
+      const favorites = cityOptions.filter(option => option.isFavorite);
+      if (favorites.length > 0) {
+        return favorites.slice(0, 6);
+      }
+      return cityOptions.slice(0, 6);
+    }
+
+    // If the query perfectly matches the currently resolved city, show ALL favorites.
+    // This happens when re-opening the dropdown for an already selected city.
+    if (resolvedCity && query === resolvedCity.cityName.toLowerCase()) {
+      const favorites = cityOptions.filter(option => option.isFavorite);
+      // If there are favorites, show them. Otherwise, just show the resolved city.
+      return favorites.length > 0 ? favorites : [resolvedCity];
+    }
+    
+    // Otherwise, filter based on the query.
+    const base = cityOptions.filter((option) =>
+        option.cityName.toLowerCase().includes(query) ||
+        option.synonyms.some((synonym) => synonym.toLowerCase().includes(query))
+      )
 
     return base.slice(0, 6)
-  }, [cityOptions, formData.cityInput])
+  }, [cityOptions, formData.cityInput, resolvedCity])
 
   const resolvedMarkerPreset = resolvedCity ? normaliseMarkerPreset(resolvedCity.markerPreset) : undefined
 
@@ -355,16 +372,16 @@ export function QuickExpenseForm({
               placeholder="Город"
               disabled={isPending}
               maxLength={100}
-              className="pl-16"
+              className={cn('pl-7', resolvedCity?.isFavorite && 'pl-11')}
             />
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2">
               <CityMarkerIcon
                 preset={resolvedMarkerPreset}
                 active={resolvedCity ? resolvedCity.hasCoordinates : false}
               />
             </div>
           {resolvedCity?.isFavorite ? (
-            <span className="pointer-events-none absolute inset-y-0 left-8 z-20 flex items-center text-amber-400">★</span>
+            <span className="pointer-events-none absolute inset-y-0 left-7 z-20 flex items-center text-amber-400">★</span>
           ) : null}
             {isCityDropdownOpen && filteredCityOptions.length > 0 && (
               <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
@@ -391,10 +408,10 @@ export function QuickExpenseForm({
                           onClick={() => handleCitySelect(option)}
                         >
                           <CityMarkerIcon preset={preset} active={option.hasCoordinates} />
-                          <span className="flex-1 truncate">{option.cityName}</span>
                           {option.isFavorite && (
                             <span className="text-amber-400">★</span>
                           )}
+                          <span className="flex-1 truncate">{option.cityName}</span>
                           {secondaryLabels.length > 0 && (
                             <span className="max-w-[140px] truncate text-[11px] text-slate-400">
                               {secondaryLabels.join(', ')}

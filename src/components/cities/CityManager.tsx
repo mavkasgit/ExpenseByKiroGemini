@@ -17,7 +17,7 @@ import { toggleCityFavorite, updateCityCoordinates } from '@/lib/actions/cities'
 import { attachUnrecognizedCity, getUnrecognizedCities, resolveUnrecognizedCity } from '@/lib/actions/unrecognizedCities';
 import { syncCitySynonyms } from '@/lib/utils/cityParser';
 import type { CitySynonymWithCity, UnrecognizedCity } from '@/types';
-import { DEFAULT_MARKER_PRESET, markerPresetLookup } from '@/lib/constants/cityMarkers';
+import { DEFAULT_MARKER_PRESET, MARKER_PRESETS, markerPresetLookup } from '@/lib/constants/cityMarkers';
 import { parseCityCoordinates, parseManualCoordinatePair, normaliseMarkerPreset, type CityCoordinates } from '@/lib/utils/cityCoordinates';
 import {
   DEFAULT_ZOOM,
@@ -35,6 +35,31 @@ import { CityManagerOverviewMapSection } from './CityManagerOverviewMapSection';
 import { CityManagerStatsCard } from './CityManagerStatsCard';
 import type { CityGroup, CityGroupWithCoordinates, CitySynonymRecord } from './cityManagerTypes';
 
+const pickRandomMarkerPreset = (exclude?: string) => {
+  if (MARKER_PRESETS.length === 0) {
+    return DEFAULT_MARKER_PRESET;
+  }
+
+  const [firstPreset] = MARKER_PRESETS;
+
+  if (!firstPreset) {
+    return DEFAULT_MARKER_PRESET;
+  }
+
+  if (MARKER_PRESETS.length === 1) {
+    return firstPreset.value;
+  }
+
+  let candidate: string | undefined = exclude;
+
+  while (!candidate || candidate === exclude) {
+    const randomIndex = Math.floor(Math.random() * MARKER_PRESETS.length);
+    candidate = MARKER_PRESETS[randomIndex]?.value ?? firstPreset.value;
+  }
+
+  return candidate;
+};
+
 export function CityManager() {
   const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -49,6 +74,8 @@ export function CityManager() {
   const [selectedAttachCityId, setSelectedAttachCityId] = useState<string | null>(null)
   const [isAttachingUnrecognized, setIsAttachingUnrecognized] = useState(false)
   const [selectedMarkerPreset, setSelectedMarkerPreset] = useState<string>(DEFAULT_MARKER_PRESET)
+  const selectedMarkerPresetRef = useRef(selectedMarkerPreset)
+  selectedMarkerPresetRef.current = selectedMarkerPreset
   const selectedMarkerLabel = useMemo(() => {
     const preset = markerPresetLookup.get(normaliseMarkerPreset(selectedMarkerPreset))
     return preset?.label ?? 'Стандартный маркер'
@@ -65,6 +92,10 @@ export function CityManager() {
   const overviewMapRef = useRef<unknown>(null)
   const lastGeocodedQuery = useRef('')
   const yandexApiKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY
+
+  useEffect(() => {
+    setSelectedMarkerPreset(pickRandomMarkerPreset());
+  }, []);
 
   const formatCityCoordinates = useCallback((coords: CityCoordinates | null) => {
     if (!coords) {
@@ -83,7 +114,7 @@ export function CityManager() {
     setSelectedCoordinates(null)
     setManualLat('')
     setManualLon('')
-    setSelectedMarkerPreset(DEFAULT_MARKER_PRESET)
+    setSelectedMarkerPreset(prev => pickRandomMarkerPreset(prev))
     setMapState(createDefaultMapState())
     lastGeocodedQuery.current = ''
   }, [])
@@ -133,8 +164,8 @@ export function CityManager() {
       return
     }
 
-    applyCoordinates({ ...parsed, markerPreset: selectedMarkerPreset })
-  }, [manualLat, manualLon, applyCoordinates, showToast, selectedMarkerPreset])
+    applyCoordinates({ ...parsed, markerPreset: selectedMarkerPresetRef.current })
+  }, [manualLat, manualLon, applyCoordinates, showToast])
 
   const geocodeCity = useCallback(async (query: string, options: { silent?: boolean; force?: boolean } = {}) => {
     const { silent = false, force = false } = options
@@ -192,7 +223,7 @@ export function CityManager() {
         return null
       }
 
-      const coords: CityCoordinates = { lat, lon, markerPreset: selectedMarkerPreset }
+      const coords: CityCoordinates = { lat, lon, markerPreset: selectedMarkerPresetRef.current }
       lastGeocodedQuery.current = trimmed
       applyCoordinates(coords)
 
@@ -210,7 +241,7 @@ export function CityManager() {
     } finally {
       setIsSearchingCoordinates(false)
     }
-  }, [applyCoordinates, showToast, yandexApiKey, selectedMarkerPreset])
+  }, [applyCoordinates, showToast, yandexApiKey])
 
   const loadSynonyms = useCallback(async () => {
     setIsLoading(true)
@@ -482,9 +513,9 @@ export function CityManager() {
 
   const handleCoordinateSelection = useCallback(
     (lat: number, lon: number) => {
-      applyCoordinates({ lat, lon, markerPreset: selectedMarkerPreset })
+      applyCoordinates({ lat, lon, markerPreset: selectedMarkerPresetRef.current })
     },
-    [applyCoordinates, selectedMarkerPreset]
+    [applyCoordinates]
   )
 
   const handleManualLatChange = useCallback((value: string) => {
