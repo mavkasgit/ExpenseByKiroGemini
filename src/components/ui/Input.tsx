@@ -11,8 +11,8 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ 
-    className, 
+  ({
+    className,
     type = 'text',
     label,
     error,
@@ -21,7 +21,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     rightIcon,
     variant = 'default',
     id,
-    ...props 
+    autoComplete,
+    ...props
   }, ref) => {
     const generatedId = useId()
     const inputId = id || generatedId
@@ -72,7 +73,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               className
             )}
             ref={ref}
-            autoComplete="off"
+            autoComplete={autoComplete ?? 'new-password'}
             {...props}
           />
           

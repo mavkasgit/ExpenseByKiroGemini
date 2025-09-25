@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { TimeInput } from '@/components/ui/TimeInput'
 import { createExpense } from '@/lib/actions/expenses'
+import { toggleCityFavorite } from '@/lib/actions/cities'
 import { getCurrentDateISO, getCurrentTimeHHMM } from '@/lib/utils/dateUtils'
 import type { CreateExpenseData } from '@/types'
 import { useToast } from '@/hooks/useToast'
@@ -51,7 +52,7 @@ export function QuickExpenseForm({
   })
 
   const [userSettings, setUserSettings] = useState<UserSettings>({})
-  const { synonyms: citySynonyms } = useCitySynonyms()
+  const { synonyms: citySynonyms, updateCityFavorite } = useCitySynonyms()
 
   type CityOption = {
     cityId: string
@@ -59,6 +60,7 @@ export function QuickExpenseForm({
     markerPreset: string | null
     hasCoordinates: boolean
     synonyms: string[]
+    isFavorite: boolean
   }
 
   const { cityOptions, cityLookupBySynonym, cityLookupById } = useMemo(() => {
@@ -83,12 +85,17 @@ export function QuickExpenseForm({
         cityName: record.cityName,
         markerPreset: record.markerPreset,
         hasCoordinates: record.hasCoordinates,
-        synonyms: [record.cityName]
+        synonyms: [record.cityName],
+        isFavorite: record.isFavorite
       }
 
       if (!existing) {
         byId.set(record.cityId, baseOption)
         synonymsSet.add(record.cityName.trim().toLowerCase())
+      }
+
+      if (record.isFavorite && !baseOption.isFavorite) {
+        baseOption.isFavorite = true
       }
 
       if (record.markerPreset && !baseOption.markerPreset) {
@@ -109,9 +116,12 @@ export function QuickExpenseForm({
       bySynonym.set(record.cityName.trim().toLowerCase(), baseOption)
     })
 
-    const options = Array.from(byId.values()).sort((a, b) =>
-      a.cityName.localeCompare(b.cityName, 'ru')
-    )
+    const options = Array.from(byId.values()).sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) {
+        return a.isFavorite ? -1 : 1
+      }
+      return a.cityName.localeCompare(b.cityName, 'ru')
+    })
 
     return {
       cityOptions: options,
@@ -130,6 +140,7 @@ export function QuickExpenseForm({
 
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false)
   const [highlightedCityIndex, setHighlightedCityIndex] = useState(0)
+  const [favoriteMutationCityId, setFavoriteMutationCityId] = useState<string | null>(null)
 
   const resolvedCity = useMemo(() => {
     if (formData.cityId) {
@@ -154,6 +165,42 @@ export function QuickExpenseForm({
   }, [cityOptions, formData.cityInput])
 
   const resolvedMarkerPreset = resolvedCity ? normaliseMarkerPreset(resolvedCity.markerPreset) : undefined
+  const isFavoriteUpdating = resolvedCity ? favoriteMutationCityId === resolvedCity.cityId : false
+  const favoriteButtonTitle = resolvedCity
+    ? resolvedCity.isFavorite
+      ? `Убрать «${resolvedCity.cityName}» из избранного`
+      : `Добавить «${resolvedCity.cityName}» в избранное`
+    : 'Выберите город, чтобы добавить его в избранное'
+
+  const handleToggleFavoriteCity = useCallback(async () => {
+    if (!resolvedCity) {
+      return
+    }
+
+    const nextValue = !resolvedCity.isFavorite
+    setFavoriteMutationCityId(resolvedCity.cityId)
+
+    try {
+      const result = await toggleCityFavorite({ id: resolvedCity.cityId, isFavorite: nextValue })
+      if (result && 'error' in result && result.error) {
+        showToast(result.error, 'error')
+        return
+      }
+
+      updateCityFavorite(resolvedCity.cityId, nextValue)
+      showToast(
+        nextValue
+          ? `Город «${resolvedCity.cityName}» добавлен в избранное`
+          : `Город «${resolvedCity.cityName}» убран из избранного`,
+        'success'
+      )
+    } catch (error) {
+      console.error('Failed to toggle city favorite', error)
+      showToast('Не удалось обновить избранный город', 'error')
+    } finally {
+      setFavoriteMutationCityId(null)
+    }
+  }, [resolvedCity, showToast, updateCityFavorite])
 
   useEffect(() => {
     setHighlightedCityIndex(0)
@@ -417,13 +464,42 @@ export function QuickExpenseForm({
               placeholder="Город"
               disabled={isPending}
               maxLength={100}
-              className="pl-10"
+              className="pl-16"
             />
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <CityMarkerIcon
-                preset={resolvedMarkerPreset}
-                active={resolvedCity ? resolvedCity.hasCoordinates : false}
-              />
+            <div className="absolute inset-y-0 left-0 flex items-center gap-1 pl-3 pr-2">
+              <span className="pointer-events-none">
+                <CityMarkerIcon
+                  preset={resolvedMarkerPreset}
+                  active={resolvedCity ? resolvedCity.hasCoordinates : false}
+                />
+              </span>
+              <button
+                type="button"
+                className={cn(
+                  'rounded-md p-1 text-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-0',
+                  resolvedCity?.isFavorite
+                    ? 'text-amber-500 hover:text-amber-600'
+                    : 'text-slate-300 hover:text-slate-400',
+                  (!resolvedCity || isFavoriteUpdating)
+                    ? 'cursor-not-allowed opacity-60 hover:text-slate-300'
+                    : 'cursor-pointer'
+                )}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (!resolvedCity || isFavoriteUpdating) {
+                    return
+                  }
+                  void handleToggleFavoriteCity()
+                }}
+                disabled={!resolvedCity || isFavoriteUpdating}
+                aria-pressed={resolvedCity?.isFavorite ?? false}
+                aria-label={favoriteButtonTitle}
+                title={favoriteButtonTitle}
+              >
+                <span className={cn(isFavoriteUpdating && 'animate-pulse')}>
+                  {resolvedCity?.isFavorite ? '★' : '☆'}
+                </span>
+              </button>
             </div>
             {isCityDropdownOpen && filteredCityOptions.length > 0 && (
               <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
@@ -450,6 +526,9 @@ export function QuickExpenseForm({
                           onClick={() => handleCitySelect(option)}
                         >
                           <CityMarkerIcon preset={preset} active={option.hasCoordinates} />
+                          {option.isFavorite && (
+                            <span className="text-amber-500">★</span>
+                          )}
                           <span className="flex-1 truncate">{option.cityName}</span>
                           {secondaryLabels.length > 0 && (
                             <span className="max-w-[140px] truncate text-[11px] text-slate-400">

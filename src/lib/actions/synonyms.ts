@@ -230,7 +230,7 @@ export async function getCitySynonyms() {
 
     const { data, error } = await supabase
       .from('city_synonyms')
-      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates)')
+      .select('id, synonym, city_id, user_id, created_at, city:cities(id, name, coordinates, is_favorite)')
       .eq('user_id', user.id);
 
     if (error) {
