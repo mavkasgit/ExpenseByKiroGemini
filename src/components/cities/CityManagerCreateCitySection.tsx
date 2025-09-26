@@ -1,5 +1,6 @@
 'use client';
 
+import type { RefObject } from 'react';
 import { Button, Input } from '@/components/ui';
 import { MarkerPresetPicker } from '@/components/cities/MarkerPresetPicker';
 import { YMaps, Map as YandexMap, Placemark } from '@pbe/react-yandex-maps';
@@ -10,8 +11,8 @@ import { extractEventCoordinates, extractPlacemarkCoordinates, type MapState } f
 interface CityManagerCreateCitySectionProps {
   newCity: string;
   onCityChange: (value: string) => void;
-  alternateCity: string;
-  onAlternateCityChange: (value: string) => void;
+  newCityInputRef: RefObject<HTMLInputElement | null>;
+  useUnrecognizedAlternate: boolean;
   isSubmitting: boolean;
   onFindOnMap: () => void;
   isSearchingCoordinates: boolean;
@@ -33,8 +34,8 @@ interface CityManagerCreateCitySectionProps {
 export function CityManagerCreateCitySection({
   newCity,
   onCityChange,
-  alternateCity,
-  onAlternateCityChange,
+  newCityInputRef,
+  useUnrecognizedAlternate,
   isSubmitting,
   onFindOnMap,
   isSearchingCoordinates,
@@ -52,6 +53,10 @@ export function CityManagerCreateCitySection({
   onManualBlur,
   onManualApply,
 }: CityManagerCreateCitySectionProps) {
+  const submitLabel = useUnrecognizedAlternate
+    ? 'Добавить город вместе с его альтернативным названием'
+    : 'Добавить город';
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-2">
@@ -68,6 +73,7 @@ export function CityManagerCreateCitySection({
               disabled={isSubmitting}
               className="h-11 pl-12"
               autoComplete="new-password"
+              ref={newCityInputRef}
             />
             <MarkerPresetPicker
               value={selectedMarkerPreset}
@@ -78,24 +84,7 @@ export function CityManagerCreateCitySection({
             />
           </div>
         </div>
-        <div className="flex-grow space-y-2">
-          <label
-            className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
-            htmlFor="synonym-alternate"
-          >
-            Альтернативное название
-          </label>
-          <Input
-            id="synonym-alternate"
-            placeholder="Например: Питер"
-            value={alternateCity}
-            onChange={event => onAlternateCityChange(event.target.value)}
-            disabled={isSubmitting}
-            className="h-11"
-            autoComplete="new-password"
-          />
-        </div>
-        <div className="flex flex-shrink-0 gap-2">
+        <div className="flex flex-shrink-0 gap-2 sm:self-end">
           <Button
             type="button"
             variant="outline"
@@ -106,8 +95,13 @@ export function CityManagerCreateCitySection({
           >
             Найти на карте
           </Button>
-          <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || !selectedCoordinates} className="h-11">
-            Добавить город
+          <Button
+            type="submit"
+            isLoading={isSubmitting}
+            disabled={isSubmitting || !selectedCoordinates}
+            className="h-11 text-center leading-snug"
+          >
+            {submitLabel}
           </Button>
         </div>
       </div>

@@ -16,6 +16,8 @@ interface CityManagerUnrecognizedPanelProps {
   selectedUnrecognizedCity: UnrecognizedCity | null;
   onClearUnrecognizedSelection: () => void;
   onUseUnrecognizedCity: () => void;
+  useUnrecognizedAlternate: boolean;
+  onToggleUseUnrecognizedAlternate: (value: boolean) => void;
   citySelectionOptions: SelectOption[];
   selectedAttachCityId: string | null;
   onSelectAttachCity: (value: string | null) => void;
@@ -32,6 +34,8 @@ export function CityManagerUnrecognizedPanel({
   selectedUnrecognizedCity,
   onClearUnrecognizedSelection,
   onUseUnrecognizedCity,
+  useUnrecognizedAlternate,
+  onToggleUseUnrecognizedAlternate,
   citySelectionOptions,
   selectedAttachCityId,
   onSelectAttachCity,
@@ -49,7 +53,7 @@ export function CityManagerUnrecognizedPanel({
         onChange={onSelectUnrecognizedCity}
         placeholder={isLoadingUnrecognized ? 'Загружаем список…' : 'Выберите город из расходов'}
         className="w-full"
-        disabled={isLoadingUnrecognized || isSubmitting}
+        disabled={isLoadingUnrecognized || isSubmitting || useUnrecognizedAlternate}
         maxVisibleOptions={3}
         forceOpen
       />
@@ -71,7 +75,7 @@ export function CityManagerUnrecognizedPanel({
             </div>
           </div>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-4">
-            <div className="flex flex-col items-center justify-center rounded-lg border bg-slate-50/50 p-4">
+            <div className="space-y-3 rounded-lg border bg-slate-50/50 p-4">
               <Button
                 type="button"
                 variant="outline"
@@ -80,6 +84,18 @@ export function CityManagerUnrecognizedPanel({
                 className="w-full"
               >
                 Использовать как новый город
+              </Button>
+              <Button
+                type="button"
+                variant={useUnrecognizedAlternate ? 'primary' : 'secondary'}
+                onClick={() => onToggleUseUnrecognizedAlternate(!useUnrecognizedAlternate)}
+                disabled={!selectedUnrecognizedCity || isSubmitting}
+                className="w-full text-xs font-medium leading-snug"
+                aria-pressed={useUnrecognizedAlternate}
+              >
+                {useUnrecognizedAlternate
+                  ? 'Не добавлять альтернативное название'
+                  : 'Добавить альтернативное название из списка'}
               </Button>
             </div>
             <div className="space-y-3 rounded-lg border bg-slate-50/50 p-4">

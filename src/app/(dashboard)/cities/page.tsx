@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StickyPageHeader } from '@/components/layout/StickyPageHeader'
 import { CityManager } from '@/components/cities/CityManager'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -96,31 +96,31 @@ export default function CitiesPage() {
     void fetchUser()
   }, [])
 
-  useEffect(() => {
-    const loadCityExpenses = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await fetch(`/api/cities/expenses?period=${selectedPeriod}`, { cache: 'no-store' })
-        const payload = await response.json()
+  const loadCityExpenses = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/cities/expenses?period=${selectedPeriod}`, { cache: 'no-store' })
+      const payload = await response.json()
 
-        if (!response.ok || payload?.error) {
-          throw new Error(payload?.error ?? 'Не удалось загрузить карту расходов по городам')
-        }
-
-        const data = Array.isArray(payload?.data) ? (payload.data as CityExpenseSummary[]) : []
-        setCityExpenses(data)
-      } catch (loadError) {
-        console.error('Не удалось загрузить данные для карты расходов по городам', loadError)
-        setCityExpenses([])
-        setError(loadError instanceof Error ? loadError.message : 'Произошла ошибка при загрузке данных')
-      } finally {
-        setIsLoading(false)
+      if (!response.ok || payload?.error) {
+        throw new Error(payload?.error ?? 'Не удалось загрузить карту расходов по городам')
       }
-    }
 
-    void loadCityExpenses()
+      const data = Array.isArray(payload?.data) ? (payload.data as CityExpenseSummary[]) : []
+      setCityExpenses(data)
+    } catch (loadError) {
+      console.error('Не удалось загрузить данные для карты расходов по городам', loadError)
+      setCityExpenses([])
+      setError(loadError instanceof Error ? loadError.message : 'Произошла ошибка при загрузке данных')
+    } finally {
+      setIsLoading(false)
+    }
   }, [selectedPeriod])
+
+  useEffect(() => {
+    void loadCityExpenses()
+  }, [loadCityExpenses])
 
   useEffect(() => {
     if (citiesWithCoordinates.length === 0) {
@@ -278,7 +278,7 @@ export default function CitiesPage() {
           </CardContent>
         </Card>
 
-        <CityManager />
+        <CityManager onCityCreated={loadCityExpenses} />
       </main>
     </div>
   )

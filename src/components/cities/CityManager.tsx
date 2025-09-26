@@ -35,6 +35,10 @@ import { CityManagerOverviewMapSection } from './CityManagerOverviewMapSection';
 import { CityManagerStatsCard } from './CityManagerStatsCard';
 import type { CityGroup, CityGroupWithCoordinates, CitySynonymRecord } from './cityManagerTypes';
 
+interface CityManagerProps {
+  onCityCreated?: () => Promise<void> | void;
+}
+
 const pickRandomMarkerPreset = (exclude?: string) => {
   if (MARKER_PRESETS.length === 0) {
     return DEFAULT_MARKER_PRESET;
@@ -60,7 +64,7 @@ const pickRandomMarkerPreset = (exclude?: string) => {
   return candidate;
 };
 
-export function CityManager() {
+export function CityManager({ onCityCreated }: CityManagerProps = {}) {
   const [synonyms, setSynonyms] = useState<CitySynonymRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [newCity, setNewCity] = useState('')
@@ -87,7 +91,8 @@ export function CityManager() {
   const [selectedCoordinates, setSelectedCoordinates] = useState<CityCoordinates | null>(null)
   const [manualLat, setManualLat] = useState('')
   const [manualLon, setManualLon] = useState('')
-  const [newCitySynonym, setNewCitySynonym] = useState('')
+  const [useUnrecognizedAlternate, setUseUnrecognizedAlternate] = useState(false)
+  const newCityInputRef = useRef<HTMLInputElement | null>(null)
   const [isSearchingCoordinates, setIsSearchingCoordinates] = useState(false)
   const mapRef = useRef<unknown>(null)
   const overviewMapRef = useRef<unknown>(null)
@@ -397,6 +402,16 @@ export function CityManager() {
     }
   }, [selectedUnrecognizedCityId, selectedUnrecognizedCity])
 
+  useEffect(() => {
+    if (!useUnrecognizedAlternate) {
+      return
+    }
+
+    if (!selectedUnrecognizedCity?.name) {
+      setUseUnrecognizedAlternate(false)
+    }
+  }, [selectedUnrecognizedCity, useUnrecognizedAlternate])
+
   const citySelectionOptions = useMemo<SelectOption[]>(
     () =>
       groupedSynonyms.map(group => ({
@@ -480,16 +495,10 @@ export function CityManager() {
       setSelectedAttachCityId(null)
 
       if (!value) {
-        setNewCitySynonym('')
-        return
-      }
-
-      const city = unrecognizedCities.find(item => item.id === value)
-      if (city?.name) {
-        setNewCitySynonym(city.name)
+        setUseUnrecognizedAlternate(false)
       }
     },
-    [unrecognizedCities]
+    []
   )
 
   const handleUseUnrecognizedCity = useCallback(() => {
@@ -498,14 +507,16 @@ export function CityManager() {
       return
     }
     setNewCity(selectedUnrecognizedCity.name)
-    setNewCitySynonym(selectedUnrecognizedCity.name)
+    requestAnimationFrame(() => {
+      newCityInputRef.current?.focus()
+    })
     geocodeCity(selectedUnrecognizedCity.name, { silent: true, force: true })
   }, [geocodeCity, selectedUnrecognizedCity, showToast])
 
   const handleClearUnrecognizedSelection = useCallback(() => {
     setSelectedUnrecognizedCityId(null)
     setSelectedAttachCityId(null)
-    setNewCitySynonym('')
+    setUseUnrecognizedAlternate(false)
   }, [])
 
   const handleSelectAttachCity = useCallback((value: string | null) => {
@@ -516,9 +527,24 @@ export function CityManager() {
     setNewCity(value)
   }, [])
 
-  const handleAlternateCityChange = useCallback((value: string) => {
-    setNewCitySynonym(value)
-  }, [])
+  const handleToggleUseUnrecognizedAlternate = useCallback(
+    (nextValue: boolean) => {
+      if (nextValue) {
+        if (!selectedUnrecognizedCity?.name) {
+          showToast('Выберите непознанный город, чтобы использовать его как альтернативное название', 'warning')
+          return
+        }
+        setUseUnrecognizedAlternate(true)
+        requestAnimationFrame(() => {
+          newCityInputRef.current?.focus()
+        })
+        return
+      }
+
+      setUseUnrecognizedAlternate(false)
+    },
+    [selectedUnrecognizedCity, showToast]
+  )
 
   const handleFindCityOnMap = useCallback(() => {
     if (!newCity.trim()) {
@@ -680,27 +706,21 @@ export function CityManager() {
         let effectiveCoordinates: CityCoordinates | null = selectedCoordinates
 
         const additionalSynonyms = (() => {
-          const collected = new Map<string, string>()
-          const normalizedCity = cityName.toLocaleLowerCase('ru')
-
-          const register = (value: string | null | undefined) => {
-            const trimmed = value?.trim()
-            if (!trimmed) {
-              return
-            }
-            const normalized = trimmed.toLocaleLowerCase('ru')
-            if (normalized === normalizedCity) {
-              return
-            }
-            if (!collected.has(normalized)) {
-              collected.set(normalized, trimmed)
-            }
+          if (!useUnrecognizedAlternate) {
+            return []
           }
 
-          register(newCitySynonym)
-          register(selectedUnrecognizedCity?.name)
+          const alternative = selectedUnrecognizedCity?.name?.trim()
+          if (!alternative) {
+            return []
+          }
 
-          return Array.from(collected.values())
+          const normalizedCity = cityName.toLocaleLowerCase('ru')
+          if (alternative.toLocaleLowerCase('ru') === normalizedCity) {
+            return []
+          }
+
+          return [alternative]
         })()
 
         if (createdCityId && !coordinatesAreEqual(selectedCoordinates, serverCoordinates)) {
@@ -769,9 +789,17 @@ export function CityManager() {
           await loadUnrecognizedCities()
         }
 
+        if (onCityCreated) {
+          try {
+            await onCityCreated()
+          } catch (refreshError) {
+            console.error('Не удалось обновить карту расходов после добавления города', refreshError)
+          }
+        }
+
         showToast('Город добавлен', 'success')
         setNewCity('')
-        setNewCitySynonym('')
+        setUseUnrecognizedAlternate(false)
         resetSelection()
       }
     } catch (error) {
@@ -862,6 +890,10 @@ export function CityManager() {
           syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
           return updated;
         });
+        if (selectedAttachCityId === cityToDelete.id) {
+          setSelectedAttachCityId(null);
+        }
+        await loadUnrecognizedCities();
         showToast('Город и все его синонимы удалены', 'success');
       }
     } catch (error) {
@@ -940,6 +972,8 @@ export function CityManager() {
                     selectedUnrecognizedCity={selectedUnrecognizedCity}
                     onClearUnrecognizedSelection={handleClearUnrecognizedSelection}
                     onUseUnrecognizedCity={handleUseUnrecognizedCity}
+                    useUnrecognizedAlternate={useUnrecognizedAlternate}
+                    onToggleUseUnrecognizedAlternate={handleToggleUseUnrecognizedAlternate}
                     citySelectionOptions={citySelectionOptions}
                     selectedAttachCityId={selectedAttachCityId}
                     onSelectAttachCity={handleSelectAttachCity}
@@ -950,8 +984,8 @@ export function CityManager() {
                   <CityManagerCreateCitySection
                     newCity={newCity}
                     onCityChange={handleCityNameChange}
-                    alternateCity={newCitySynonym}
-                    onAlternateCityChange={handleAlternateCityChange}
+                    newCityInputRef={newCityInputRef}
+                    useUnrecognizedAlternate={useUnrecognizedAlternate}
                     isSubmitting={isSubmitting}
                     onFindOnMap={handleFindCityOnMap}
                     isSearchingCoordinates={isSearchingCoordinates}
