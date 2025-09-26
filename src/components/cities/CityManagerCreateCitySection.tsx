@@ -10,6 +10,8 @@ import { extractEventCoordinates, extractPlacemarkCoordinates, type MapState } f
 interface CityManagerCreateCitySectionProps {
   newCity: string;
   onCityChange: (value: string) => void;
+  alternateCity: string;
+  onAlternateCityChange: (value: string) => void;
   isSubmitting: boolean;
   onFindOnMap: () => void;
   isSearchingCoordinates: boolean;
@@ -31,6 +33,8 @@ interface CityManagerCreateCitySectionProps {
 export function CityManagerCreateCitySection({
   newCity,
   onCityChange,
+  alternateCity,
+  onAlternateCityChange,
   isSubmitting,
   onFindOnMap,
   isSearchingCoordinates,
@@ -73,6 +77,23 @@ export function CityManagerCreateCitySection({
               triggerClassName="absolute inset-y-0 left-0 flex h-full w-10 items-center justify-center rounded-l-md border-r border-slate-300 bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-0"
             />
           </div>
+        </div>
+        <div className="flex-grow space-y-2">
+          <label
+            className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            htmlFor="synonym-alternate"
+          >
+            Альтернативное название
+          </label>
+          <Input
+            id="synonym-alternate"
+            placeholder="Например: Питер"
+            value={alternateCity}
+            onChange={event => onAlternateCityChange(event.target.value)}
+            disabled={isSubmitting}
+            className="h-11"
+            autoComplete="new-password"
+          />
         </div>
         <div className="flex flex-shrink-0 gap-2">
           <Button

@@ -427,6 +427,104 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
       return { error: 'Нет данных для создания' }
     }
 
+    // Получаем справочную информацию по городам и ключевым словам один раз
+    const [cityQuery, synonymQuery, aliasQuery] = await Promise.all([
+      supabase
+        .from('cities')
+        .select('id, name')
+        .eq('user_id', user.id),
+      supabase
+        .from('city_synonyms')
+        .select('city_id, synonym')
+        .eq('user_id', user.id),
+      supabase
+        .from('city_aliases')
+        .select('city_id, name')
+        .eq('user_id', user.id)
+    ])
+
+    const cityRecords = cityQuery?.data ?? []
+    const synonymRecords = synonymQuery?.data ?? []
+    const aliasRecords = Array.isArray(aliasQuery?.data) ? aliasQuery?.data ?? [] : []
+
+    if (aliasQuery?.error && aliasQuery.error.code !== '42P01') {
+      console.error('Ошибка загрузки алиасов городов:', aliasQuery.error)
+    }
+
+    const cityIdSet = new Set<string>()
+    const cityNameLookup = new Map<string, { id: string; name: string }>()
+    const cityById = new Map<string, { id: string; name: string }>()
+
+    for (const city of cityRecords ?? []) {
+      if (!city?.id) {
+        continue
+      }
+      cityIdSet.add(city.id)
+      const normalized = city.name?.trim().toLocaleLowerCase('ru')
+      if (normalized) {
+        cityNameLookup.set(normalized, { id: city.id, name: city.name })
+      }
+      cityById.set(city.id, { id: city.id, name: city.name ?? '' })
+    }
+
+    const synonymLookup = new Map<string, { id: string; name: string }>()
+
+    for (const record of synonymRecords ?? []) {
+      const normalized = record?.synonym?.trim().toLocaleLowerCase('ru')
+      if (normalized && record.city_id) {
+        const city = cityById.get(record.city_id)
+        synonymLookup.set(normalized, { id: record.city_id, name: city?.name ?? record.synonym ?? '' })
+      }
+    }
+
+    for (const alias of aliasRecords ?? []) {
+      const normalized = alias?.name?.trim().toLocaleLowerCase('ru')
+      if (normalized && alias.city_id) {
+        const city = cityById.get(alias.city_id)
+        synonymLookup.set(normalized, { id: alias.city_id, name: city?.name ?? alias.name ?? '' })
+      }
+    }
+
+    const rememberUnrecognizedCity = async (name: string, occurrences: number) => {
+      const normalized = name.trim()
+      if (!normalized || occurrences <= 0) {
+        return
+      }
+
+      try {
+        const { data: existing } = await supabase
+          .from('unrecognized_cities')
+          .select('id, frequency')
+          .eq('user_id', user.id)
+          .ilike('name', normalized)
+          .maybeSingle()
+
+        const timestamp = new Date().toISOString()
+
+        if (existing?.id) {
+          await supabase
+            .from('unrecognized_cities')
+            .update({
+              frequency: (existing.frequency ?? 0) + occurrences,
+              last_seen: timestamp
+            })
+            .eq('id', existing.id)
+        } else {
+          await supabase
+            .from('unrecognized_cities')
+            .insert({
+              user_id: user.id,
+              name: normalized,
+              frequency: occurrences,
+              first_seen: timestamp,
+              last_seen: timestamp
+            })
+        }
+      } catch (error) {
+        console.error('Не удалось сохранить непознанный город при массовом вводе', error)
+      }
+    }
+
     // ОПТИМИЗАЦИЯ: Получаем все ключевые слова один раз
     const { data: keywords } = await supabase
       .from('category_keywords')
@@ -483,9 +581,11 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     const processedExpenses = []
     const errors: Array<{ row: number; message: string }> = []
     
+    const unrecognizedCounters = new Map<string, { name: string; count: number }>()
+
     for (let i = 0; i < expenses.length; i++) {
       const expense = expenses[i]
-      
+
       try {
         // Валидируем данные
         const validatedData = expenseSchema.parse({
@@ -509,6 +609,35 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
         // Определяем статус расхода
         const status = finalCategoryId ? 'categorized' : 'uncategorized'
 
+        let resolvedCityId: string | null = null
+        const trimmedCityInput = validatedData.city_input?.trim() ?? ''
+
+        if (validatedData.city_id && cityIdSet.has(validatedData.city_id)) {
+          resolvedCityId = validatedData.city_id
+        }
+
+        if (!resolvedCityId && trimmedCityInput) {
+          const normalizedCity = trimmedCityInput.toLocaleLowerCase('ru')
+          const directMatch = cityNameLookup.get(normalizedCity)
+          if (directMatch) {
+            resolvedCityId = directMatch.id
+          } else {
+            const synonymMatch = synonymLookup.get(normalizedCity)
+            if (synonymMatch) {
+              resolvedCityId = synonymMatch.id
+            }
+          }
+
+          if (!resolvedCityId) {
+            const existing = unrecognizedCounters.get(normalizedCity)
+            if (existing) {
+              existing.count += 1
+            } else {
+              unrecognizedCounters.set(normalizedCity, { name: trimmedCityInput, count: 1 })
+            }
+          }
+        }
+
         processedExpenses.push({
           user_id: user.id,
           amount: validatedData.amount,
@@ -522,8 +651,8 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
           status,
           matched_keywords: matchedKeywords.length > 0 ? matchedKeywords : null,
           auto_categorized: autoCategorized,
-          city_id: validatedData.city_id ?? null,
-          raw_city_input: validatedData.city_input?.trim() || null
+          city_id: resolvedCityId,
+          raw_city_input: trimmedCityInput || null
         })
       } catch (err) {
         errors.push({
@@ -553,6 +682,12 @@ export async function createBulkExpenses(expenses: CreateExpenseData[]) {
     if (error) {
       console.error('Ошибка создания массовых расходов:', error)
       return { error: 'Не удалось создать расходы' }
+    }
+
+    if (unrecognizedCounters.size > 0) {
+      await Promise.all(
+        Array.from(unrecognizedCounters.values()).map(entry => rememberUnrecognizedCity(entry.name, entry.count))
+      )
     }
 
     // Подсчитываем статистику

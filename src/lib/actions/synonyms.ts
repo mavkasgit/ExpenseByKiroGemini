@@ -359,6 +359,30 @@ export async function createCitySynonym(data: CreateCitySynonymData) {
       return { error: 'Не удалось создать синоним города' };
     }
 
+    if (trimmedSynonym) {
+      const now = new Date().toISOString();
+      const { error: updateExpensesError } = await supabase
+        .from('expenses')
+        .update({ city_id: cityId, updated_at: now })
+        .eq('user_id', user.id)
+        .is('city_id', null)
+        .filter('raw_city_input', 'ilike', trimmedSynonym);
+
+      if (updateExpensesError) {
+        console.error('Не удалось обновить расходы для нового синонима города:', updateExpensesError);
+      } else {
+        const { error: deleteUnrecognizedError } = await supabase
+          .from('unrecognized_cities')
+          .delete()
+          .eq('user_id', user.id)
+          .ilike('name', trimmedSynonym);
+
+        if (deleteUnrecognizedError) {
+          console.warn('Не удалось удалить непознанный город после добавления синонима:', deleteUnrecognizedError);
+        }
+      }
+    }
+
     revalidatePath('/settings');
     revalidatePath('/cities');
     return { success: true, data: { ...(synonym as CitySynonym), city: cityRecord } as CitySynonymWithCity };
