@@ -87,6 +87,7 @@ export function CityManager() {
   const [selectedCoordinates, setSelectedCoordinates] = useState<CityCoordinates | null>(null)
   const [manualLat, setManualLat] = useState('')
   const [manualLon, setManualLon] = useState('')
+  const [newCitySynonym, setNewCitySynonym] = useState('')
   const [isSearchingCoordinates, setIsSearchingCoordinates] = useState(false)
   const mapRef = useRef<unknown>(null)
   const overviewMapRef = useRef<unknown>(null)
@@ -473,10 +474,23 @@ export function CityManager() {
     }
   }, [groupedSynonyms, synonyms])
 
-  const handleSelectUnrecognizedCity = useCallback((value: string | null) => {
-    setSelectedUnrecognizedCityId(value)
-    setSelectedAttachCityId(null)
-  }, [])
+  const handleSelectUnrecognizedCity = useCallback(
+    (value: string | null) => {
+      setSelectedUnrecognizedCityId(value)
+      setSelectedAttachCityId(null)
+
+      if (!value) {
+        setNewCitySynonym('')
+        return
+      }
+
+      const city = unrecognizedCities.find(item => item.id === value)
+      if (city?.name) {
+        setNewCitySynonym(city.name)
+      }
+    },
+    [unrecognizedCities]
+  )
 
   const handleUseUnrecognizedCity = useCallback(() => {
     if (!selectedUnrecognizedCity) {
@@ -484,12 +498,14 @@ export function CityManager() {
       return
     }
     setNewCity(selectedUnrecognizedCity.name)
+    setNewCitySynonym(selectedUnrecognizedCity.name)
     geocodeCity(selectedUnrecognizedCity.name, { silent: true, force: true })
   }, [geocodeCity, selectedUnrecognizedCity, showToast])
 
   const handleClearUnrecognizedSelection = useCallback(() => {
     setSelectedUnrecognizedCityId(null)
     setSelectedAttachCityId(null)
+    setNewCitySynonym('')
   }, [])
 
   const handleSelectAttachCity = useCallback((value: string | null) => {
@@ -498,6 +514,10 @@ export function CityManager() {
 
   const handleCityNameChange = useCallback((value: string) => {
     setNewCity(value)
+  }, [])
+
+  const handleAlternateCityChange = useCallback((value: string) => {
+    setNewCitySynonym(value)
   }, [])
 
   const handleFindCityOnMap = useCallback(() => {
@@ -659,6 +679,30 @@ export function CityManager() {
           : null
         let effectiveCoordinates: CityCoordinates | null = selectedCoordinates
 
+        const additionalSynonyms = (() => {
+          const collected = new Map<string, string>()
+          const normalizedCity = cityName.toLocaleLowerCase('ru')
+
+          const register = (value: string | null | undefined) => {
+            const trimmed = value?.trim()
+            if (!trimmed) {
+              return
+            }
+            const normalized = trimmed.toLocaleLowerCase('ru')
+            if (normalized === normalizedCity) {
+              return
+            }
+            if (!collected.has(normalized)) {
+              collected.set(normalized, trimmed)
+            }
+          }
+
+          register(newCitySynonym)
+          register(selectedUnrecognizedCity?.name)
+
+          return Array.from(collected.values())
+        })()
+
         if (createdCityId && !coordinatesAreEqual(selectedCoordinates, serverCoordinates)) {
           const updateResult = await updateCityCoordinates({ id: createdCityId, coordinates: selectedCoordinates })
           if (updateResult?.error) {
@@ -667,23 +711,50 @@ export function CityManager() {
           }
         }
 
+        const createdRecords: CitySynonymRecord[] = []
+
         if (!createdCityId) {
           await loadSynonyms()
         } else {
-          setSynonyms(prev => {
-            const newRecord: CitySynonymRecord = {
-              id: Number(payload.id),
+          createdRecords.push({
+            id: Number(payload.id),
+            cityId: createdCityId,
+            cityName: createdCityName,
+            synonym: payload.synonym,
+            coordinates:
+              effectiveCoordinates ??
+              (serverCoordinates
+                ? { ...serverCoordinates, markerPreset: normaliseMarkerPreset(serverCoordinates.markerPreset) }
+                : null),
+            isFavorite: false
+          })
+
+          for (const synonymValue of additionalSynonyms) {
+            const synonymResult = await createCitySynonym({ cityId: createdCityId, synonym: synonymValue })
+            if (synonymResult?.error) {
+              showToast(synonymResult.error, 'error')
+              continue
+            }
+            const synonymPayload = synonymResult?.data as CitySynonymWithCity | undefined
+            if (!synonymPayload) {
+              continue
+            }
+            createdRecords.push({
+              id: Number(synonymPayload.id),
               cityId: createdCityId,
               cityName: createdCityName,
-              synonym: payload.synonym,
+              synonym: synonymPayload.synonym,
               coordinates:
                 effectiveCoordinates ??
                 (serverCoordinates
                   ? { ...serverCoordinates, markerPreset: normaliseMarkerPreset(serverCoordinates.markerPreset) }
                   : null),
               isFavorite: false
-            }
-            const updated = [...prev, newRecord]
+            })
+          }
+
+          setSynonyms(prev => {
+            const updated = [...prev, ...createdRecords]
             syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })))
             return updated
           })
@@ -700,6 +771,7 @@ export function CityManager() {
 
         showToast('Город добавлен', 'success')
         setNewCity('')
+        setNewCitySynonym('')
         resetSelection()
       }
     } catch (error) {
@@ -878,6 +950,8 @@ export function CityManager() {
                   <CityManagerCreateCitySection
                     newCity={newCity}
                     onCityChange={handleCityNameChange}
+                    alternateCity={newCitySynonym}
+                    onAlternateCityChange={handleAlternateCityChange}
                     isSubmitting={isSubmitting}
                     onFindOnMap={handleFindCityOnMap}
                     isSearchingCoordinates={isSearchingCoordinates}
