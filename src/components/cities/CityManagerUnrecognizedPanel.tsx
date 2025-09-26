@@ -85,18 +85,18 @@ export function CityManagerUnrecognizedPanel({
               >
                 Использовать как новый город
               </Button>
-              <label className="flex cursor-pointer items-start gap-2 text-xs text-slate-600">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={useUnrecognizedAlternate}
-                  onChange={(event) => onToggleUseUnrecognizedAlternate(event.target.checked)}
-                  disabled={!selectedUnrecognizedCity || isSubmitting}
-                />
-                <span className="leading-snug">
-                  Добавить «{selectedUnrecognizedCity?.name ?? '—'}» как альтернативное название для нового города
-                </span>
-              </label>
+              <Button
+                type="button"
+                variant={useUnrecognizedAlternate ? 'primary' : 'secondary'}
+                onClick={() => onToggleUseUnrecognizedAlternate(!useUnrecognizedAlternate)}
+                disabled={!selectedUnrecognizedCity || isSubmitting}
+                className="w-full text-xs font-medium leading-snug"
+                aria-pressed={useUnrecognizedAlternate}
+              >
+                {useUnrecognizedAlternate
+                  ? 'Не добавлять альтернативное название'
+                  : 'Добавить альтернативное название из списка'}
+              </Button>
             </div>
             <div className="space-y-3 rounded-lg border bg-slate-50/50 p-4">
               <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">

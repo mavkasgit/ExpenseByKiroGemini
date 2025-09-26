@@ -890,6 +890,10 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
           syncCitySynonyms(updated.map(record => ({ city: record.cityName, synonym: record.synonym })));
           return updated;
         });
+        if (selectedAttachCityId === cityToDelete.id) {
+          setSelectedAttachCityId(null);
+        }
+        await loadUnrecognizedCities();
         showToast('Город и все его синонимы удалены', 'success');
       }
     } catch (error) {
