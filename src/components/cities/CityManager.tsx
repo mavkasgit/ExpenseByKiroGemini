@@ -197,10 +197,13 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
 
     setIsSearchingCoordinates(true)
     try {
-      const response = await fetch(
-        `https://geocode-maps.yandex.ru/1.x/?apikey=${yandexApiKey}&format=json&geocode=${encodeURIComponent(trimmed)}`
-      )
+      const response = await fetch(`/api/geocode?city=${encodeURIComponent(trimmed)}`)
       const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch geocoding data')
+      }
+
       const geoObjects = data?.response?.GeoObjectCollection?.featureMember ?? []
 
       if (geoObjects.length === 0) {
@@ -241,13 +244,14 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     } catch (error) {
       console.error('Geocoding API error:', error)
       if (!silent) {
-        showToast('Произошла ошибка при поиске города', 'error')
+        const errorMessage = error instanceof Error ? error.message : 'Произошла ошибка при поиске города'
+        showToast(errorMessage, 'error')
       }
       return null
     } finally {
       setIsSearchingCoordinates(false)
     }
-  }, [applyCoordinates, showToast, yandexApiKey])
+  }, [applyCoordinates, showToast])
 
   const loadSynonyms = useCallback(async () => {
     setIsLoading(true)
