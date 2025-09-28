@@ -1,6 +1,5 @@
-
 import { NextResponse } from 'next/server';
-import pdf from 'pdf-parse';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf';
 
 export async function POST(request: Request) {
   try {
@@ -12,10 +11,19 @@ export async function POST(request: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const data = await pdf(buffer);
+    const buffer = new Uint8Array(arrayBuffer);
 
-    return NextResponse.json({ text: data.text });
+    const pdf = await pdfjs.getDocument(buffer).promise;
+    const numPages = pdf.numPages;
+    let textContent = '';
+
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdf.getPage(i);
+      const text = await page.getTextContent();
+      textContent += text.items.map((s: any) => s.str).join(' ');
+    }
+
+    return NextResponse.json({ text: textContent });
   } catch (error) {
     console.error('Error parsing PDF:', error);
     return NextResponse.json({ error: 'Error parsing PDF' }, { status: 500 });
