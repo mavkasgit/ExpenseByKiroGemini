@@ -171,6 +171,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     result: BuildExpensesResult
   } | null>(null)
   const [isReviewProcessing, setIsReviewProcessing] = useState(false)
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewedTable, setPreviewedTable] = useState<{ description: string; rows: string[][] } | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false)
   const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -888,16 +890,9 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     ? (isReviewProcessing ? 'Сохранение...' : 'Подтвердить и сохранить')
     : 'Подтвердить импорт'
 
-  // Обработка выбора таблицы из HTML файла
-  const handleTableSelection = useCallback(
-    async (tableIndex: number, tableInfo?: TableInfo) => {
-      if (!fileContent || !fileName) {
-        showToast('Сначала загрузите файл с выпиской', 'error')
-        return
-      }
-
+  const processTableSelection = useCallback(
+    async (tableIndex: number, currentFileContent: string, currentFileName: string, tableInfo?: TableInfo) => {
       setIsFileLoading(true)
-      setShowTableSelection(false)
 
       // Сохраняем выбранный индекс таблицы
       saveTableIndex(tableIndex)
@@ -918,7 +913,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       }
 
       try {
-        const parsed = await parseBankStatementFile(new File([fileContent], fileName), tableIndex)
+        const parsed = await parseBankStatementFile(new File([currentFileContent], currentFileName), tableIndex)
         const prepared = prepareParsedDataset(parsed)
         const dataset = prepared.rows
 
@@ -946,31 +941,59 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
       } catch (error) {
         showToast(error instanceof Error ? error.message : 'Ошибка обработки таблицы', 'error')
       } finally {
+        setShowTableSelection(false)
         setIsFileLoading(false)
       }
     },
-    [
-      appendSingleColumnExpenses,
-      availableTables,
-      fileContent,
-      fileName,
-      saveTableIndex,
-      showToast
-    ]
+    [appendSingleColumnExpenses, availableTables, saveTableIndex, showToast]
   )
+
+  // Обработка выбора таблицы из HTML файла
+  const handleTableSelection = useCallback(
+    async (tableIndex: number, tableInfo?: TableInfo) => {
+      if (!fileContent || !fileName) {
+        showToast('Сначала загрузите файл с выпиской', 'error')
+        return
+      }
+      await processTableSelection(tableIndex, fileContent, fileName, tableInfo)
+    },
+    [fileContent, fileName, processTableSelection, showToast]
+  )
+
+
+
+  const handlePreviewTable = (tableIndex: number) => {
+    if (!fileContent) return;
+
+    try {
+      const parsedTable = parseHTML(fileContent, tableIndex);
+      const allRows = parsedTable.headers && parsedTable.headers.length > 0 
+        ? [parsedTable.headers, ...parsedTable.rows] 
+        : parsedTable.rows;
+
+      setPreviewedTable({
+        description: availableTables[tableIndex]?.description || `Таблица ${tableIndex + 1}`,
+        rows: allRows,
+      });
+      setIsPreviewModalOpen(true);
+    } catch (error) {
+      console.error("Error previewing table:", error);
+      showToast("Не удалось загрузить предпросмотр таблицы", "error");
+    }
+  };
 
   // Загрузка из файла
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
+    setIsFileLoading(true)
     try {
-      setIsFileLoading(true)
       const fileExtension = file.name.split('.').pop()?.toLowerCase()
-      setFileName(file.name)
       const content = await file.text()
 
       // Сохраняем информацию о файле
+      setFileName(file.name)
       setFileContent(content)
       setSelectedTableMeta(null)
       setAvailableTables([])
@@ -982,6 +1005,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
           if (analysis.tables.length === 0) {
             showToast('В HTML файле не найдено таблиц с данными', 'error')
+            setIsFileLoading(false)
             return
           }
 
@@ -989,22 +1013,24 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
           if (analysis.tables.length === 1) {
             // Если только одна таблица, используем её сразу
-            await handleTableSelection(0, analysis.tables[0])
+            await processTableSelection(0, content, file.name, analysis.tables[0])
           } else {
             // Проверяем, есть ли сохраненный индекс таблицы и подходит ли он
-            if (savedTableIndex !== null &&
-                savedTableIndex >= 0 &&
-                savedTableIndex < analysis.tables.length) {
+            const savedIdx = loadSavedTableIndex()
+            if (savedIdx !== null &&
+                savedIdx >= 0 &&
+                savedIdx < analysis.tables.length) {
               // Используем сохраненную таблицу автоматически
-              await handleTableSelection(savedTableIndex, analysis.tables[savedTableIndex])
+              await processTableSelection(savedIdx, content, file.name, analysis.tables[savedIdx])
             } else {
               // Показываем выбор таблицы
               setShowTableSelection(true)
+              setIsFileLoading(false)
             }
           }
         } catch (error) {
           showToast(error instanceof Error ? error.message : 'Ошибка анализа HTML файла', 'error')
-          return
+          setIsFileLoading(false)
         }
       } else {
         const parsed = await parseBankStatementFile(file)
@@ -1013,12 +1039,14 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
 
         if (dataset.length === 0) {
           showToast('Файл пуст', 'error')
+          setIsFileLoading(false)
           return
         }
 
         const dataRows = prepared.hasHeader ? dataset.slice(1) : dataset
         if (dataRows.length === 0) {
           showToast('В файле найдены только заголовки без данных', 'warning')
+          setIsFileLoading(false)
           return
         }
 
@@ -1032,17 +1060,18 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
           appendSingleColumnExpenses(dataset, prepared.hasHeader, 'файла')
           setHasHeaderRow(false)
         }
+        setIsFileLoading(false)
       }
     } catch (error) {
       showToast('Ошибка при загрузке файла', 'error')
-    } finally {
       setIsFileLoading(false)
+    } finally {
       // Очищаем input для возможности повторной загрузки того же файла
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     }
-  }, [showToast, handleTableSelection, savedTableIndex, appendSingleColumnExpenses])
+  }, [showToast, processTableSelection, loadSavedTableIndex, appendSingleColumnExpenses])
 
   // Прямое сохранение без предпросмотра
   const handleDirectSave = useCallback(async () => {
@@ -1139,6 +1168,15 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
     setFileContent(null)
     setFileName('')
   }, [])
+
+  const handleRequestTableReplacement = useCallback(() => {
+    if (!fileContent) {
+      showToast('Не найдено данных из файла для смены таблицы.', 'warning');
+      return;
+    }
+    setIsColumnMappingOpen(false);
+    setShowTableSelection(true);
+  }, [fileContent, showToast]);
 
   return (
     <div className="space-y-6">
@@ -1450,6 +1488,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         isOpen={showTableSelection}
         onClose={() => {
           setShowTableSelection(false)
+          setIsFileLoading(false)
           if (!selectedTableMeta) {
             setAvailableTables([])
             setFileContent(null)
@@ -1465,34 +1504,23 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
               Найдено {availableTables.length} таблиц. Выберите таблицу для импорта:
             </div>
 
-            {isFileLoading && (
-              <div className="flex items-center gap-2 text-sm text-blue-700" aria-live="polite">
-                <span className="h-3 w-3 animate-spin rounded-full border border-blue-400 border-t-transparent" />
-                Обрабатываем выбранную таблицу...
-              </div>
-            )}
+
 
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {availableTables.map((table, index) => (
                 <div
                   key={index}
                   className={`p-4 border rounded-lg transition-colors ${
-                    savedTableIndex === index
+                    (savedTableIndex !== null && savedTableIndex === index) || (savedTableIndex === null && index === 0)
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   } ${isFileLoading ? 'cursor-wait opacity-60' : 'cursor-pointer'}`}
-                  role="button"
                   tabIndex={isFileLoading ? -1 : 0}
                   aria-disabled={isFileLoading}
                   onClick={() => {
-                    if (!isFileLoading) {
-                      handleTableSelection(index)
-                    }
+                    handleTableSelection(index)
                   }}
                   onKeyDown={event => {
-                    if (isFileLoading) {
-                      return
-                    }
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
                       handleTableSelection(index)
@@ -1500,7 +1528,7 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                   }}
                 >
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-medium text-gray-900">
                         {table.description}
                       </h3>
@@ -1511,11 +1539,23 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
                         {table.hasHeaders ? 'Содержит строку заголовков' : 'Без отдельной строки заголовков'}
                       </p>
                     </div>
-                    {savedTableIndex === index && (
-                      <div className="text-blue-600 text-sm">
-                        ✓ Использовалась ранее
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {savedTableIndex === index && (
+                        <div className="text-blue-600 text-sm font-medium">
+                          ✓ Ранее
+                        </div>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePreviewTable(index);
+                        }}
+                      >
+                        Предпросмотр
+                      </Button>
+                    </div>
                   </div>
 
                   {table.preview.length > 0 && (
@@ -1563,6 +1603,39 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         )}
       </Modal>
 
+      {/* Модальное окно предпросмотра таблицы */}
+      <Modal
+        isOpen={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        title={`Предпросмотр: ${previewedTable?.description || ''}`}
+        size="xl"
+      >
+        {previewedTable && (
+          <div className="max-h-[70vh] overflow-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full text-xs border-collapse">
+              <thead className="sticky top-0 bg-gray-100 z-10">
+                {previewedTable.rows[0] && (
+                  <tr>
+                    {previewedTable.rows[0].map((cell, cellIndex) => (
+                      <th key={cellIndex} className="border-b border-gray-300 p-2 text-left font-semibold text-gray-700">{cell}</th>
+                    ))}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {previewedTable.rows.slice(1).map((row, rowIndex) => (
+                  <tr key={rowIndex} className="even:bg-gray-50">
+                    {row.map((cell, cellIndex) => (
+                      <td key={cellIndex} className="border-b border-gray-200 p-2">{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
       {/* Модальное окно настройки столбцов */}
       <ColumnMappingModal
         isOpen={isColumnMappingOpen}
@@ -1577,6 +1650,8 @@ export function BulkExpenseInput({ categories }: BulkExpenseInputProps) {
         sampleData={pastedData}
         savedMapping={savedColumnMapping}
         isEditingMode={isEditingColumnMapping}
+        tableDescription={selectedTableMeta?.description}
+        onReplaceTable={handleRequestTableReplacement}
       />
     </div>
   )

@@ -251,7 +251,7 @@ export function CityManager({ onCityCreated }: CityManagerProps = {}) {
     } finally {
       setIsSearchingCoordinates(false)
     }
-  }, [applyCoordinates, showToast])
+  }, [applyCoordinates, showToast, yandexApiKey])
 
   const loadSynonyms = useCallback(async () => {
     setIsLoading(true)

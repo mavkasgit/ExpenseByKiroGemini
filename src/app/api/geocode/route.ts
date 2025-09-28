@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const city = searchParams.get('city');
-  const yandexApiKey = process.env.NEXT_PUBLIC_YANDEX_API_KEY;
+  const yandexApiKey = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY;
 
   if (!city) {
     return NextResponse.json({ error: 'City is required' }, { status: 400 });

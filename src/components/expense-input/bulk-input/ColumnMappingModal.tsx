@@ -37,6 +37,8 @@ interface ColumnMappingModalProps {
   sampleData: string[][] // Первые несколько строк для предпросмотра
   savedMapping?: ColumnMapping[] | null // Сохраненная схема столбцов
   isEditingMode?: boolean // Режим редактирования сохраненной схемы
+  tableDescription?: string | null
+  onReplaceTable?: () => void
 }
 
 const FIELD_ICONS: Record<ColumnMappingField, string> = {
@@ -98,7 +100,9 @@ export function ColumnMappingModal({
   onApplyAndSave,
   sampleData,
   savedMapping,
-  isEditingMode = false
+  isEditingMode = false,
+  tableDescription,
+  onReplaceTable
 }: ColumnMappingModalProps) {
   // Инициализируем порядок столбцов (только индексы)
   const [columnOrder, setColumnOrder] = useState<number[]>([])
@@ -107,6 +111,7 @@ export function ColumnMappingModal({
   const [fieldAssignments, setFieldAssignments] = useState<FieldAssignment[]>([])
   const [openColumnPicker, setOpenColumnPicker] = useState<number | null>(null)
   const [hiddenColumns, setHiddenColumns] = useState<Set<number>>(() => new Set())
+  const [isHiddernColumnsVisible, setIsHiddernColumnsVisible] = useState(true)
   const [pickerPosition, setPickerPosition] = useState<{
     top: number
     left: number
@@ -497,13 +502,26 @@ export function ColumnMappingModal({
 
         {/* Таблица с данными и кликабельными заголовками */}
         <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="font-medium text-gray-900">Ваши данные</h3>
-            <Tooltip content="Кликните на заголовок столбца чтобы назначить ему поле">
-              <div className="w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center text-xs cursor-help">
-                ?
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-gray-900">Ваши данные</h3>
+              <Tooltip content="Кликните на заголовок столбца чтобы назначить ему поле">
+                <div className="w-4 h-4 bg-gray-400 text-white rounded-full flex items-center justify-center text-xs cursor-help">
+                  ?
+                </div>
+              </Tooltip>
+            </div>
+            {tableDescription && onReplaceTable && !isEditingMode && (
+              <div className="flex items-center gap-2 text-sm">
+                <span>📝</span>
+                <span className="font-semibold text-gray-700" title={tableDescription}>
+                  {tableDescription}
+                </span>
+                <Button variant="primary" size="sm" onClick={onReplaceTable}>
+                  Заменить
+                </Button>
               </div>
-            </Tooltip>
+            )}
           </div>
 
           <p className="mb-3 text-xs text-gray-500">
@@ -696,43 +714,55 @@ export function ColumnMappingModal({
 
           {hiddenColumnOrder.length > 0 && (
             <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-                  Скрытые столбцы
+              <div 
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setIsHiddernColumnsVisible(!isHiddernColumnsVisible)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    Скрытые столбцы ({hiddenColumnOrder.length})
+                  </div>
                 </div>
-                <p className="text-[11px] text-gray-500">
-                  Мы запомним их позиции и автоматически спрячем при следующем импорте.
-                </p>
+                <div className="flex items-center gap-2">
+                    <p className="text-[11px] text-gray-500 hidden sm:block">
+                      Мы запомним их позиции и автоматически спрячем при следующем импорте.
+                    </p>
+                    <span className={`ml-2 text-gray-400 transition-transform ${isHiddernColumnsVisible ? 'rotate-180' : ''}`} aria-hidden>
+                        ▾
+                    </span>
+                </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {hiddenColumnOrder.map(originalIndex => {
-                  const columnLabel = getColumnDisplayLabel(originalIndex)
-                  const sampleValue = sampleData[0]?.[originalIndex] || ''
-                  return (
-                    <div
-                      key={originalIndex}
-                      className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm"
-                    >
-                      <div className="text-xs font-medium text-gray-700">{columnLabel}</div>
-                      {sampleValue && (
-                        <div
-                          className="max-w-[140px] truncate text-[11px] text-gray-400"
-                          title={sampleValue}
-                        >
-                          {sampleValue}
-                        </div>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleColumnHidden(originalIndex)}
+              {isHiddernColumnsVisible && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {hiddenColumnOrder.map(originalIndex => {
+                    const columnLabel = getColumnDisplayLabel(originalIndex)
+                    const sampleValue = sampleData[0]?.[originalIndex] || ''
+                    return (
+                      <div
+                        key={originalIndex}
+                        className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm"
                       >
-                        Показать
-                      </Button>
-                    </div>
-                  )
-                })}
-              </div>
+                        <div className="text-xs font-medium text-gray-700">{columnLabel}</div>
+                        {sampleValue && (
+                          <div
+                            className="max-w-[140px] truncate text-[11px] text-gray-400"
+                            title={sampleValue}
+                          >
+                            {sampleValue}
+                          </div>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleColumnHidden(originalIndex)}
+                        >
+                          Показать
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
