@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { signOut } from '@/lib/actions/auth'
 import { SettingsModal } from './SettingsModal'
+import { SignOutButton } from './SignOutButton'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 
 interface UserMenuProps {
   userEmail: string
@@ -10,72 +12,42 @@ interface UserMenuProps {
 
 export function UserMenu({ userEmail }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Закрываем меню при клике вне его
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false)
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     setError(null)
     setIsSigningOut(true)
-    setIsSuccess(false)
 
-    try {
-      const result = await signOut()
-      if (result?.error) {
-        setError(result.error)
-        setIsSigningOut(false)
-      } else if (result?.success) {
-        setIsSuccess(true)
-        // Показываем анимацию успеха, затем перенаправляем
-        setTimeout(() => {
-          window.location.href = '/login'
-        }, 1500)
-      }
-    } catch (err) {
-      console.error('Sign out error:', err)
-      setError('Произошла ошибка при выходе')
-      setIsSigningOut(false)
-    }
-  }
+    // Fire and forget the server action
+    signOut().catch(err => console.error('Background sign out error:', err));
 
-  if (isSuccess) {
-    return (
-      <div className="flex items-center space-x-3 bg-red-100 text-red-800 px-4 py-2 rounded-lg animate-pulse border border-red-200 shadow-lg">
-        <div className="relative">
-          <div className="animate-spin rounded-full h-5 w-5 border-2 border-red-300 border-t-red-600"></div>
-          <div className="absolute inset-0 rounded-full bg-red-600 opacity-20 animate-ping"></div>
-        </div>
-        <div className="text-sm font-medium">
-          <div className="flex items-center space-x-1">
-            <span>Выход выполнен!</span>
-            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <div className="text-xs text-red-600 animate-bounce">Перенаправляем...</div>
-        </div>
-      </div>
-    )
+    // Redirect after a short delay to ensure the signOut call is sent
+    // and the overlay has had a chance to render.
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 100);
   }
 
   return (
     <>
+      {isSigningOut && <LoadingOverlay text="Выходим из системы..." />}
+
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -106,7 +78,6 @@ export function UserMenu({ userEmail }: UserMenuProps) {
           </svg>
         </button>
 
-        {/* Выпадающее меню */}
         <div className={`
           absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50
           transition-all duration-200 origin-top-right
@@ -116,7 +87,6 @@ export function UserMenu({ userEmail }: UserMenuProps) {
           }
         `}>
           <div className="py-2">
-            {/* Информация о пользователе */}
             <div className="px-4 py-3 border-b border-gray-100">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center">
@@ -148,36 +118,8 @@ export function UserMenu({ userEmail }: UserMenuProps) {
               </button>
             </div>
 
-            {/* Кнопка выхода */}
             <div className="p-2 border-t border-gray-100">
-              <button
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-                className={`
-                  flex items-center w-full px-4 py-2 text-sm transition-all duration-200 rounded-md
-                  ${isSigningOut 
-                    ? 'text-gray-400 cursor-not-allowed bg-gray-50' 
-                    : 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                  }
-                `}
-              >
-                {isSigningOut ? (
-                  <>
-                    <div className="relative mr-3">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>
-                      <div className="absolute inset-0 rounded-full bg-gray-400 opacity-20 animate-pulse"></div>
-                    </div>
-                    <span className="animate-pulse">Выход...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    <span className="font-medium">Выйти</span>
-                  </>
-                )}
-              </button>
+              <SignOutButton onClick={handleSignOut} disabled={isSigningOut} />
             </div>
 
             {error && (

@@ -67,10 +67,10 @@ function DefaultErrorFallback({ error, resetError }: { error?: Error; resetError
           Произошла неожиданная ошибка. Мы уже работаем над её исправлением.
         </p>
         
-        {process.env.NODE_ENV === 'development' && error && (
+        {error && (
           <details className="mb-6 text-left">
             <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-              Детали ошибки (только в режиме разработки)
+              Детали ошибки
             </summary>
             <pre className="mt-2 p-3 bg-gray-100 rounded text-xs text-red-600 overflow-auto">
               {error.message}

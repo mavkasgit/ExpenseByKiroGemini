@@ -152,7 +152,7 @@ export async function updatePassword(data: UpdatePasswordData) {
   }
 }
 
-export async function signInWithGoogle() {
+export async function getGoogleSignInURL() {
   const supabase = await createServerClient()
 
   const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
@@ -162,7 +162,6 @@ export async function signInWithGoogle() {
     options: {
       redirectTo: redirectUrl,
       queryParams: {
-        prompt: 'select_account', // Заставляет Google показывать выбор аккаунта
         access_type: 'offline',
       },
     },
@@ -174,13 +173,13 @@ export async function signInWithGoogle() {
   }
 
   if (data.url) {
-    redirect(data.url)
+    return { url: data.url }
   }
 
-  return { success: true }
+  return { error: 'URL для входа Google не найден' }
 }
 
-export async function signInWithGoogleForceSelect() {
+export async function getGoogleForceSelectURL() {
   const supabase = await createServerClient()
 
   const redirectUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
@@ -202,10 +201,10 @@ export async function signInWithGoogleForceSelect() {
   }
 
   if (data.url) {
-    redirect(data.url)
+    return { url: data.url }
   }
 
-  return { success: true }
+  return { error: 'URL для входа Google не найден' }
 }
 
 export async function getUser() {

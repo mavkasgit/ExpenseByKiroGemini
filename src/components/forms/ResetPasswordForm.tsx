@@ -3,18 +3,11 @@
 import { useState, useEffect } from 'react'
 import { updatePassword } from '@/lib/actions/auth'
 import { createClient } from '@/lib/supabase/client'
+import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import type { UpdatePasswordData } from '@/lib/validations/auth'
 import Link from 'next/link'
 
-interface ResetPasswordFormProps {
-  tokenHash?: string
-  token?: string
-  email?: string
-  code?: string
-  type?: string
-}
-
-export function ResetPasswordForm({ tokenHash, token, email, code, type }: ResetPasswordFormProps) {
+export function ResetPasswordForm() {
   const [formData, setFormData] = useState<UpdatePasswordData>({
     password: '',
     confirmPassword: '',
@@ -25,59 +18,25 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
   const [isVerifying, setIsVerifying] = useState(true)
   const [tokenValid, setTokenValid] = useState(false)
 
-  // Верифицируем токен при загрузке компонента
   useEffect(() => {
     const verifyToken = async () => {
-      if (!tokenHash && !token && !code) {
-        setError('Отсутствуют параметры для сброса пароля')
-        setIsVerifying(false)
-        return
-      }
-
       const supabase = createClient()
+      const { data: { session }, error: getSessionError } = await supabase.auth.getSession()
 
-      try {
-        let verifyResult
-
-        if (code) {
-          // Новый формат с code параметром
-          verifyResult = await supabase.auth.exchangeCodeForSession(code)
-        } else if (tokenHash) {
-          // Формат с token_hash
-          verifyResult = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: 'recovery',
-          })
-        } else if (token && email) {
-          // Старый формат с token
-          verifyResult = await supabase.auth.verifyOtp({
-            token,
-            type: 'recovery',
-            email,
-          })
-        }
-
-        if (verifyResult?.error) {
-          console.error('Token verification error:', verifyResult.error?.message)
-          setError('Недействительная или устаревшая ссылка для сброса пароля')
-          setTokenValid(false)
-        } else if (verifyResult?.data?.user) {
-          setTokenValid(true)
-        } else {
-          setError('Не удалось верифицировать токен')
-          setTokenValid(false)
-        }
-      } catch (error: any) {
-        console.error('Token verification exception:', error?.message ?? error)
-        setError('Ошибка при проверке токена')
+      if (getSessionError) {
+        setError('Недействительная или устаревшая ссылка для сброса пароля.')
         setTokenValid(false)
-      } finally {
-        setIsVerifying(false)
+      } else if (session) {
+        setTokenValid(true)
+      } else {
+        setError('Отсутствует токен для сброса пароля.')
+        setTokenValid(false)
       }
+      setIsVerifying(false)
     }
 
     verifyToken()
-  }, [tokenHash, token, email, code])
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,13 +46,11 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
 
     try {
       const result = await updatePassword(formData)
-      
       if (result?.error) {
         setError(result.error)
       } else if (result?.success) {
         setSuccess('Пароль успешно обновлен! Перенаправляем на страницу входа...')
         setFormData({ password: '', confirmPassword: '' })
-        // Редирект через 2 секунды
         setTimeout(() => {
           window.location.href = '/login?message=password-updated'
         }, 2000)
@@ -106,44 +63,26 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }))
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  // Показываем загрузку во время верификации токена
   if (isVerifying) {
     return (
       <div className="mt-8 space-y-6">
-        <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mr-3"></div>
-            <p className="text-center text-blue-600">
-              Проверка ссылки для сброса пароля...
-            </p>
-          </div>
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          <p className="ml-3 text-gray-600">Проверка ссылки...</p>
         </div>
       </div>
     )
   }
 
-  // Показываем ошибку, если токен недействителен
   if (!tokenValid) {
     return (
       <div className="mt-8 space-y-6">
-        <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-red-500">
-          <p className="text-center text-red-600 mb-4">
-            {error || 'Недействительная или устаревшая ссылка для сброса пароля'}
-          </p>
-          <div className="text-center">
-            <Link
-              href="/forgot-password"
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              Запросить сброс пароля →
-            </Link>
-          </div>
+        <ErrorMessage error={error || 'Ссылка недействительна.'} showDismiss={false} />
+        <div className="text-center">
+          <Link href="/forgot-password" className="font-medium text-indigo-600 hover:text-indigo-500">Запросить новую ссылку</Link>
         </div>
       </div>
     )
@@ -153,16 +92,14 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
     <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
       <div className="space-y-4">
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Новый пароль
-          </label>
+          <label htmlFor="password" className="block text-sm font-medium text-gray-700">Новый пароль</label>
           <input
             id="password"
             name="password"
             type="password"
             autoComplete="new-password"
             required
-            className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+            className={`mt-1 block w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${error ? 'border-red-500' : 'border-gray-300'}`}
             placeholder="Введите новый пароль (минимум 6 символов)"
             value={formData.password}
             onChange={handleChange}
@@ -170,16 +107,14 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
         </div>
         
         <div>
-          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-            Подтвердите пароль
-          </label>
+          <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">Подтвердите пароль</label>
           <input
             id="confirmPassword"
             name="confirmPassword"
             type="password"
             autoComplete="new-password"
             required
-            className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+            className={`mt-1 block w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm ${error ? 'border-red-500' : 'border-gray-300'}`}
             placeholder="Подтвердите новый пароль"
             value={formData.confirmPassword}
             onChange={handleChange}
@@ -187,17 +122,13 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <div className="text-sm text-red-700">{error}</div>
-        </div>
-      )}
+      {error && <ErrorMessage error={error} onDismiss={() => setError(null)} showDismiss={true} />}
 
       {success && (
         <div className="rounded-md bg-green-50 p-4">
-          <div className="text-sm text-green-700">{success}</div>
-          <div className="mt-2 flex justify-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mr-2"></div>
+            <div className="text-sm text-green-700">{success}</div>
           </div>
         </div>
       )}
@@ -208,7 +139,14 @@ export function ResetPasswordForm({ tokenHash, token, email, code, type }: Reset
           disabled={isLoading}
           className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isLoading ? 'Обновление...' : 'Обновить пароль'}
+          {isLoading ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              <span>Обновление...</span>
+            </div>
+          ) : (
+            <span>Обновить пароль</span>
+          )}
         </button>
       </div>
     </form>
