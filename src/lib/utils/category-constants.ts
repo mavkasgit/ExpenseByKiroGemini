@@ -22,8 +22,7 @@ export const availableColors = [
   '#be123c', // Малиновый
   '#7e22ce', // Пурпурный темный
   '#1d4ed8', // Синий темный
-  '#16a34a', // Зеленый темный
-  '#ca8a04'  // Желтый темный
+  '#16a34a' // Зеленый темный
 ]
 
 export const availableIcons = [

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
+import { DndContext, closestCorners, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent, DragOverEvent, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useToast } from '@/hooks/useToast'
 import { Category, CategoryGroup, CategoryKeywordWithSynonyms, KeywordSynonym } from '@/types'
@@ -29,8 +29,10 @@ interface CategoriesManagerProps {
   initialCategories: Category[]
 }
 
+export type CategoryWithKeywordCount = Category & { keywordCount: number };
+
 export type CategoryGroupWithCategories = CategoryGroup & {
-  categories: Category[];
+  categories: CategoryWithKeywordCount[];
 };
 
 const normalizeKeywords = (
@@ -45,13 +47,22 @@ const normalizeKeywords = (
     })),
   })) as CategoryKeywordWithSynonyms[];
 
-const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Category[]) : CategoryGroupWithCategories[] => {
-  const categorizedGroups = allGroups.map(group => ({
-    ...group,
-    categories: allCategories.filter(c => c.category_group_id === group.id)
+const buildGroupsWithCategories = (
+  allGroups: CategoryGroup[], 
+  allCategories: Category[],
+  keywordCountMap: Map<string, number>
+) : CategoryGroupWithCategories[] => {
+  const categoriesWithCount = allCategories.map(c => ({
+    ...c,
+    keywordCount: keywordCountMap.get(c.id) || 0
   }));
 
-  const uncategorizedCategories = allCategories.filter(c => c.category_group_id === null);
+  const categorizedGroups = allGroups.map(group => ({
+    ...group,
+    categories: categoriesWithCount.filter(c => c.category_group_id === group.id)
+  }));
+
+  const uncategorizedCategories = categoriesWithCount.filter(c => c.category_group_id === null);
 
   const uncategorizedGroup: CategoryGroup = {
     id: 'uncategorized',
@@ -64,7 +75,7 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
     updated_at: null,
   };
 
-  let finalGroups = [...categorizedGroups];
+  let finalGroups: CategoryGroupWithCategories[] = [...categorizedGroups];
   if (uncategorizedCategories.length > 0 || finalGroups.some(g => g.id === 'uncategorized')) {
     finalGroups.push({ ...uncategorizedGroup, categories: uncategorizedCategories });
   }
@@ -79,7 +90,7 @@ const buildGroupsWithCategories = (allGroups: CategoryGroup[], allCategories: Ca
 };
 
 export function CategoriesManager({ initialGroups, initialCategories }: CategoriesManagerProps) {
-  const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => buildGroupsWithCategories(initialGroups, initialCategories))
+  const [groups, setGroups] = useState<CategoryGroupWithCategories[]>([])
   const [categories, setCategories] = useState<Category[]>(initialCategories)
   const [allKeywords, setAllKeywords] = useState<CategoryKeywordWithSynonyms[]>([]);
   const [userSettings, setUserSettings] = useState<UserSettings>({});
@@ -97,9 +108,17 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
   const { showToast } = useToast()
 
+  const keywordCountByCategory = useMemo(() => {
+    const countMap = new Map<string, number>();
+    allKeywords.forEach(keyword => {
+      if (keyword.category_id) {
+        countMap.set(keyword.category_id, (countMap.get(keyword.category_id) || 0) + 1);
+      }
+    });
+    return countMap;
+  }, [allKeywords]);
+
   useEffect(() => {
-    setGroups(buildGroupsWithCategories(initialGroups, initialCategories));
-    setCategories(initialCategories);
     const fetchData = async () => {
       const [keywordsResult, settingsResult] = await Promise.all([
         getAllKeywords(),
@@ -114,8 +133,12 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
       }
     };
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setGroups(buildGroupsWithCategories(initialGroups, initialCategories, keywordCountByCategory));
+    setCategories(initialCategories);
+  }, [initialGroups, initialCategories, keywordCountByCategory]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -126,7 +149,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   )
 
   const handleApplyPreset = async (newGroups: CategoryGroup[], newCategories: Category[]) => {
-    setGroups(buildGroupsWithCategories(newGroups, newCategories));
+    setGroups(buildGroupsWithCategories(newGroups, newCategories, keywordCountByCategory));
     setCategories(newCategories);
     showToast(`Пресет успешно применен!`, 'success');
   }
@@ -154,13 +177,23 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
     }
 
     // Handle group sorting
-    if (active.data.current?.type === 'group' && active.id !== over.id) {
+    if (active.data.current?.type === 'group' && over && active.id !== over.id) {
+      if (over.id === 'uncategorized') {
+        return; // Prevent dropping onto the uncategorized group
+      }
+
       const oldIndex = groups.findIndex(g => g.id === active.id);
       const newIndex = groups.findIndex(g => g.id === over.id);
+      
       if (oldIndex !== -1 && newIndex !== -1) {
         const newOrder = arrayMove(groups, oldIndex, newIndex);
         setGroups(newOrder);
-        updateGroupOrder(newOrder.map((g, i) => ({ id: g.id, sort_order: i })));
+        
+        const groupsToUpdate = newOrder
+          .filter(g => g.id !== 'uncategorized') // Exclude uncategorized group from DB update
+          .map((g, i) => ({ id: g.id, sort_order: i }));
+
+        updateGroupOrder(groupsToUpdate);
       }
       return;
     }
@@ -293,14 +326,14 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         const { categories, ...groupData } = g;
         return groupData;
     });
-    setGroups(buildGroupsWithCategories(currentGroups, newCategories));
+    setGroups(buildGroupsWithCategories(currentGroups, newCategories, keywordCountByCategory));
     setEditingCategory(undefined);
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
     const newCategories = categories.filter(c => c.id !== categoryId);
     setCategories(newCategories);
-    setGroups(buildGroupsWithCategories(initialGroups, newCategories));
+    setGroups(buildGroupsWithCategories(initialGroups, newCategories, keywordCountByCategory));
   };
 
   const handleDeleteGroup = (groupId: string) => {
@@ -410,7 +443,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
@@ -425,6 +458,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
           handleKeywordsCategory={handleOpenKeywordsModal}
           activeGroup={activeGroup}
           activeCategory={activeCategory}
+          isGroupDragging={!!activeGroup}
         />
         <DragOverlay>
           {activeCategory ? (
@@ -440,6 +474,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
                 onKeywordsCategory={() => {}}
                 onDeleteCategory={async (categoryId: string) => {}}
                 style={draggedItemWidth ? { width: draggedItemWidth } : undefined} // Add style prop
+                isOverlay
              />
           ) : null}
         </DragOverlay>

@@ -7,29 +7,16 @@ import { Button, useToast } from '@/components/ui'
 import { deleteCategory } from '@/lib/actions/categories'
 import type { Category } from '@/types'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { availableIcons } from '@/lib/utils/category-constants';
+import { CategoryWithKeywordCount } from './CategoriesManager'
 
 interface CategoryCardProps {
-  category: Category
+  category: CategoryWithKeywordCount
   onEdit?: (category: Category) => void
   onDelete?: (categoryId: string) => void
   onKeywords?: (category: Category) => void
   isDraggable?: boolean
   isOverlay?: boolean
-}
-
-const iconMap: Record<string, string> = {
-  'shopping-bag': '🛍️',
-  'car': '🚗',
-  'home': '🏠',
-  'food': '🍽️',
-  'health': '🏥',
-  'entertainment': '🎬',
-  'education': '📚',
-  'travel': '✈️',
-  'sport': '⚽',
-  'clothes': '👕',
-  'bills': '📄',
-  'other': '📦'
 }
 
 function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDraggable = false, isOverlay = false }: CategoryCardProps) {
@@ -78,6 +65,8 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
     onKeywords(category);
   };
 
+  const iconEmoji = availableIcons.find(i => i.key === category.icon)?.emoji || '📦';
+
   const cardContent = (
     <div className="flex items-center justify-between w-full">
       <div className="flex items-center space-x-2 flex-grow min-w-0">
@@ -86,7 +75,12 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
           </button>
         )}
-        <span className="text-lg">{iconMap[category.icon || 'other'] || '📦'}</span>
+        {category.keywordCount > 0 && (
+          <span className="text-xs font-bold text-gray-500 bg-gray-200 rounded-full px-2 py-0.5">
+            {category.keywordCount}
+          </span>
+        )}
+        <span className="text-lg">{iconEmoji}</span>
         <span className="font-medium text-gray-800 text-sm truncate group-hover:text-indigo-600">{category.name}</span>
       </div>
       {!isOverlay && (

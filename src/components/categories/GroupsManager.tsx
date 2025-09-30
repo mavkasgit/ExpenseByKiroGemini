@@ -1,6 +1,6 @@
 'use client'
 
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { CategoryGroup } from './CategoryGroup'
 import { Category, CategoryGroup as TCategoryGroup } from '@/types'
 
@@ -15,6 +15,7 @@ interface GroupsManagerProps {
   handleDeleteCategory: (categoryId: string) => Promise<void>;
   activeGroup: TCategoryGroup | null
   activeCategory: Category | null
+  isGroupDragging: boolean
 }
 
 export function GroupsManager({
@@ -25,9 +26,10 @@ export function GroupsManager({
   handleKeywordsCategory,
   handleDeleteCategory,
   activeCategory,
+  isGroupDragging,
 }: GroupsManagerProps) {
   return (
-    <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy}>
+    <SortableContext items={groups.map(g => g.id)} strategy={rectSortingStrategy}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {groups.map(group => (
           <CategoryGroup
@@ -39,6 +41,7 @@ export function GroupsManager({
             onKeywordsCategory={handleKeywordsCategory}
             onDeleteCategory={handleDeleteCategory}
             activeCategory={activeCategory}
+            isGroupDragging={isGroupDragging}
           />
         ))}
       </div>

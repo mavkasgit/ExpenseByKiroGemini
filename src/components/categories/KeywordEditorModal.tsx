@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button, Input, Card, Modal, ErrorMessage } from '@/components/ui'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
 import { SimpleToast } from '@/components/ui/Toast'
-import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import {
   createKeyword,
   updateKeyword,
@@ -13,7 +12,7 @@ import {
 import { createKeywordSynonym, deleteKeywordSynonym } from '@/lib/actions/synonyms'
 import { UserSettings } from '@/lib/actions/settings'
 import { formatDateLocaleRu } from '@/lib/utils/dateUtils'
-import type { CategoryKeywordWithSynonyms, Category } from '@/types'
+import type { CategoryKeywordWithSynonyms, Category, KeywordSynonym } from '@/types'
 
 interface KeywordEditorModalProps {
   isOpen: boolean
@@ -28,9 +27,6 @@ interface KeywordEditorModalProps {
 export function KeywordEditorModal({ isOpen, onClose, category, categories, keywords, userSettings, onKeywordChange }: KeywordEditorModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [editingKeyword, setEditingKeyword] = useState<CategoryKeywordWithSynonyms | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
   const [deletingKeywordId, setDeletingKeywordId] = useState<string | null>(null)
@@ -38,11 +34,29 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
   const [synonymSaving, setSynonymSaving] = useState<Record<string, boolean>>({})
   const [synonymDeleting, setSynonymDeleting] = useState<Record<string, boolean>>({})
   const [synonymErrors, setSynonymErrors] = useState<Record<string, string | null>>({})
+  const keywordInputRef = useRef<HTMLInputElement>(null);
+  const [optimisticKeywords, setOptimisticKeywords] = useState(keywords);
+  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
+  const [inlineEditText, setInlineEditText] = useState('');
 
   const [formData, setFormData] = useState({
     keyword: '',
     category_id: category.id
   })
+
+  useEffect(() => {
+    setOptimisticKeywords(keywords);
+  }, [keywords]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        keywordInputRef.current?.focus();
+      }, 100);
+    } else {
+      setInlineEditingId(null);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const initialInputs: Record<string, string> = {}
@@ -57,33 +71,69 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
   }, [])
 
   const handleAddSynonym = useCallback(async (keywordId: string) => {
-    const synonymValue = (synonymInputs[keywordId] || '').trim()
+    const synonymValue = (synonymInputs[keywordId] || '').trim();
     if (synonymValue.length < 2) {
-      setSynonymErrors(prev => ({ ...prev, [keywordId]: 'Синоним должен содержать не менее 2 символов' }))
-      return
+      setSynonymErrors(prev => ({ ...prev, [keywordId]: 'Синоним должен содержать не менее 2 символов' }));
+      return;
     }
 
-    setSynonymSaving(prev => ({ ...prev, [keywordId]: true }))
-    setSynonymErrors(prev => ({ ...prev, [keywordId]: null }))
+    const tempSynonymId = `temp-synonym-${Date.now()}`;
+    const newSynonym: KeywordSynonym = {
+      id: tempSynonymId,
+      synonym: synonymValue,
+      keyword_id: keywordId,
+      user_id: '', // Will be set by server
+      created_at: new Date().toISOString(),
+    };
+
+    setOptimisticKeywords(prevKeywords =>
+      prevKeywords.map(kw => {
+        if (kw.id === keywordId) {
+          return {
+            ...kw,
+            keyword_synonyms: [...(kw.keyword_synonyms || []), newSynonym],
+          };
+        }
+        return kw;
+      })
+    );
+    setSynonymInputs(prev => ({ ...prev, [keywordId]: '' }));
+    setSynonymErrors(prev => ({ ...prev, [keywordId]: null }));
+
     try {
-      const result = await createKeywordSynonym({ keyword_id: keywordId, synonym: synonymValue })
+      const result = await createKeywordSynonym({ keyword_id: keywordId, synonym: synonymValue });
       if (result.error) {
-        setSynonymErrors(prev => ({ ...prev, [keywordId]: result.error }))
-        setToast({ message: result.error, type: 'error' })
+        setToast({ message: result.error, type: 'error' });
+        setOptimisticKeywords(prevKeywords =>
+          prevKeywords.map(kw => {
+            if (kw.id === keywordId) {
+              return {
+                ...kw,
+                keyword_synonyms: kw.keyword_synonyms.filter(s => s.id !== tempSynonymId),
+              };
+            }
+            return kw;
+          })
+        );
       } else {
-        setToast({ message: 'Синоним добавлен', type: 'success' })
-        setSynonymInputs(prev => ({ ...prev, [keywordId]: '' }))
-        onKeywordChange?.()
+        onKeywordChange?.();
       }
     } catch (err) {
-      console.error('Failed to add synonym', err)
-      const errorMessage = 'Не удалось добавить синоним'
-      setSynonymErrors(prev => ({ ...prev, [keywordId]: errorMessage }))
-      setToast({ message: errorMessage, type: 'error' })
-    } finally {
-      setSynonymSaving(prev => ({ ...prev, [keywordId]: false }))
+      console.error('Failed to add synonym', err);
+      setToast({ message: 'Не удалось добавить синоним', type: 'error' });
+      setOptimisticKeywords(prevKeywords =>
+        prevKeywords.map(kw => {
+          if (kw.id === keywordId) {
+            return {
+              ...kw,
+              keyword_synonyms: kw.keyword_synonyms.filter(s => s.id !== tempSynonymId),
+            };
+          }
+          return kw;
+        })
+      );
     }
-  }, [onKeywordChange, synonymInputs])
+  }, [onKeywordChange, synonymInputs]);
 
   const handleDeleteSynonym = useCallback(async (keywordId: string, synonymId: string) => {
     setSynonymDeleting(prev => ({ ...prev, [synonymId]: true }))
@@ -104,63 +154,71 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
   }, [onKeywordChange])
 
   const handleAddKeyword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.keyword.trim()) {
-      setError('Заполните ключевое слово')
-      return
+    e.preventDefault();
+    const trimmedKeyword = formData.keyword.trim();
+    if (!trimmedKeyword) {
+      setError('Заполните ключевое слово');
+      return;
     }
-    setIsSubmitting(true)
+
+    const tempId = `temp-${Date.now()}`;
+    const newKeyword: CategoryKeywordWithSynonyms = {
+      id: tempId,
+      keyword: trimmedKeyword,
+      category_id: formData.category_id,
+      created_at: new Date().toISOString(),
+      user_id: '', 
+      keyword_synonyms: [],
+    };
+
+    setOptimisticKeywords(prev => [newKeyword, ...prev]);
+    setFormData({ keyword: '', category_id: category.id });
+
     try {
       const result = await createKeyword({
-        keyword: formData.keyword.trim(),
+        keyword: trimmedKeyword,
         category_id: formData.category_id
-      })
+      });
+
       if (result.error) {
-        setError(result.error)
-        setToast({ message: result.error, type: 'error' })
+        setError(result.error);
+        setToast({ message: result.error, type: 'error' });
+        setOptimisticKeywords(prev => prev.filter(k => k.id !== tempId));
       } else {
-        setToast({ message: 'Ключевое слово успешно добавлено', type: 'success' })
-        setFormData({ keyword: '', category_id: category.id })
-        onKeywordChange?.()
+        setToast({ message: 'Ключевое слово успешно добавлено', type: 'success' });
+        onKeywordChange?.();
       }
     } catch (err) {
       console.error("Failed to add keyword:", err);
-      setError("Произошла непредвиденная ошибка.");
-      setToast({ message: "Произошла непредвиденная ошибка.", type: 'error' });
-    } finally {
-      setIsSubmitting(false)
+      const errorMessage = "Произошла непредвиденная ошибка.";
+      setError(errorMessage);
+      setToast({ message: errorMessage, type: 'error' });
+      setOptimisticKeywords(prev => prev.filter(k => k.id !== tempId));
     }
   }
 
-  const handleEditKeyword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingKeyword || !formData.keyword.trim()) {
-      setError('Заполните ключевое слово')
-      return
+  const handleUpdateKeyword = async (keywordId: string, newText: string) => {
+    const trimmedText = newText.trim();
+    const originalKeyword = optimisticKeywords.find(k => k.id === keywordId);
+    
+    setInlineEditingId(null);
+
+    if (!trimmedText || !originalKeyword || originalKeyword.keyword === trimmedText) {
+      return;
     }
-    setIsSubmitting(true)
-    try {
-      const result = await updateKeyword(editingKeyword.id, {
-        keyword: formData.keyword.trim(),
-        category_id: formData.category_id
-      })
-      if (result.error) {
-        setError(result.error)
-        setToast({ message: result.error, type: 'error' })
-      } else {
-        setToast({ message: 'Ключевое слово успешно обновлено', type: 'success' })
-        setIsEditModalOpen(false)
-        setEditingKeyword(null)
-        onKeywordChange?.()
-      }
-    } catch (err) {
-      console.error("Failed to edit keyword:", err);
-      setError("Произошла непредвиденная ошибка.");
-      setToast({ message: "Произошла непредвиденная ошибка.", type: 'error' });
-    } finally {
-      setIsSubmitting(false)
+
+    setOptimisticKeywords(prev => prev.map(k => k.id === keywordId ? { ...k, keyword: trimmedText } : k));
+
+    const result = await updateKeyword(keywordId, { keyword: trimmedText });
+
+    if (result.error) {
+      setToast({ message: result.error, type: 'error' });
+      setOptimisticKeywords(prev => prev.map(k => k.id === keywordId ? originalKeyword : k));
+    } else {
+      setToast({ message: 'Ключевое слово обновлено', type: 'success' });
+      onKeywordChange?.();
     }
-  }
+  };
 
   const handleDeleteRequest = (keywordId: string) => {
     setDeletingKeywordId(keywordId);
@@ -169,56 +227,25 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
 
   const handleConfirmDelete = async () => {
     if (!deletingKeywordId) return;
-    setIsSubmitting(true);
-    try {
-      const result = await deleteKeyword(deletingKeywordId);
-      if (result.error) {
-        setError(result.error);
-        setToast({ message: result.error, type: 'error' });
-      } else {
-        setToast({ message: 'Ключевое слово успешно удалено', type: 'success' });
-        onKeywordChange?.();
-      }
-    } catch (err) {
-      console.error("Failed to delete keyword:", err);
-      setError("Произошла непредвиденная ошибка.");
-      setToast({ message: "Произошла непредвиденная ошибка.", type: 'error' });
-    } finally {
-      setIsSubmitting(false);
-      setIsConfirmingDelete(false);
-      setDeletingKeywordId(null);
+    
+    const keywordToDelete = optimisticKeywords.find(k => k.id === deletingKeywordId);
+    if (!keywordToDelete) return;
+
+    setOptimisticKeywords(prev => prev.filter(k => k.id !== deletingKeywordId));
+    setIsConfirmingDelete(false);
+
+    const result = await deleteKeyword(deletingKeywordId);
+
+    if (result.error) {
+      setError(result.error);
+      setToast({ message: result.error, type: 'error' });
+      setOptimisticKeywords(prev => [...prev, keywordToDelete].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()));
+    } else {
+      setToast({ message: 'Ключевое слово успешно удалено', type: 'success' });
+      onKeywordChange?.();
     }
+    setDeletingKeywordId(null);
   };
-
-  const openEditModal = (keyword: CategoryKeywordWithSynonyms) => {
-    setEditingKeyword(keyword)
-    setFormData({
-      keyword: keyword.keyword,
-      category_id: keyword.category_id || category.id
-    })
-    setIsEditModalOpen(true)
-  }
-
-  const renderAddEditModals = () => (
-    <>
-      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Редактировать ключевое слово">
-        <form onSubmit={handleEditKeyword} className="space-y-4">
-          <div>
-            <label htmlFor="edit-keyword" className="block text-sm font-medium text-gray-700 mb-1">Ключевое слово *</label>
-            <Input id="edit-keyword" type="text" value={formData.keyword} onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} required />
-          </div>
-           <div>
-            <label htmlFor="edit-category" className="block text-sm font-medium text-gray-700 mb-1">Категория *</label>
-            <SearchableSelect options={categories.map(c => ({ value: c.id, label: c.name, color: c.color || undefined }))} value={formData.category_id || ''} onChange={(v) => setFormData({ ...formData, category_id: v || '' })} required />
-          </div>
-          <div className="flex justify-end space-x-3 pt-4">
-            <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Отмена</Button>
-            <Button type="submit" isLoading={isSubmitting}>{isSubmitting ? 'Сохранение...' : 'Сохранить'}</Button>
-          </div>
-        </form>
-      </Modal>
-    </>
-  )
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Ключевые слова: ${category.name}`} size="lg">
@@ -229,94 +256,123 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
 
         <form onSubmit={handleAddKeyword} className="flex items-center gap-2 p-4 border-b border-gray-200">
           <Input 
+            ref={keywordInputRef}
             value={formData.keyword} 
             onChange={(e) => setFormData({ ...formData, keyword: e.target.value })} 
             placeholder="Новое ключевое слово..." 
             required 
           />
-          <Button type="submit" isLoading={isSubmitting}>
+          <Button type="submit">
             Добавить
           </Button>
         </form>
 
         {error && <ErrorMessage error={error} onDismiss={() => setError(null)} showDismiss />}
 
-        {keywords.length === 0 ? (
+        {optimisticKeywords.length === 0 ? (
           <Card className="p-8 text-center">
             <div className="text-gray-500">У этой категории пока нет ключевых слов</div>
             <p className="text-sm text-gray-400 mt-2">Добавьте слова для автоматической категоризации расходов.</p>
           </Card>
         ) : (
           <div className="grid gap-4 max-h-96 overflow-y-auto p-1">
-            {keywords.map((keyword) => (
-              <Card key={keyword.id} className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-900">
+            {optimisticKeywords.map((keyword) => (
+              <Card key={keyword.id} className="p-4 space-y-3">
+                <div className="flex items-center gap-2 w-full">
+                  <div className="w-1/3">
+                    {inlineEditingId === keyword.id ? (
+                      <Input
+                        value={inlineEditText}
+                        onChange={(e) => setInlineEditText(e.target.value)}
+                        onBlur={() => handleUpdateKeyword(keyword.id, inlineEditText)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleUpdateKeyword(keyword.id, inlineEditText);
+                          }
+                          if (e.key === 'Escape') {
+                            setInlineEditingId(null);
+                          }
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span
+                        className="font-medium text-gray-900 cursor-pointer hover:text-blue-600 truncate"
+                        title={keyword.keyword}
+                        onClick={() => {
+                          if (keyword.id.toString().startsWith('temp-')) return;
+                          setInlineEditingId(keyword.id);
+                          setInlineEditText(keyword.keyword);
+                        }}
+                      >
                         {keyword.keyword}
                       </span>
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">Создано: {formatDateLocaleRu(keyword.created_at || '')}</div>
-                    <div className="mt-3 space-y-2">
-                      <div className="text-sm font-medium text-gray-700">Синонимы</div>
-                      {keyword.keyword_synonyms && keyword.keyword_synonyms.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {keyword.keyword_synonyms.map((synonym) => (
-                            <span
-                              key={synonym.id}
-                              className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                            >
-                              {synonym.synonym}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteSynonym(keyword.id, synonym.id)}
-                                className="text-gray-400 hover:text-red-600 focus:outline-none"
-                                disabled={!!synonymDeleting[synonym.id] || isSubmitting}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-gray-500">Синонимов пока нет</div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={synonymInputs[keyword.id] || ''}
-                          onChange={(e) => handleSynonymInputChange(keyword.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddSynonym(keyword.id);
-                            }
-                          }}
-                          placeholder="Добавьте синоним"
-                          disabled={isSubmitting || !!synonymSaving[keyword.id]}
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => handleAddSynonym(keyword.id)}
-                          isLoading={!!synonymSaving[keyword.id]}
-                          disabled={isSubmitting || (synonymInputs[keyword.id] || '').trim().length < 2 || !!synonymSaving[keyword.id]}
-                        >
-                          Добавить
-                        </Button>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => openEditModal(keyword)} disabled={isSubmitting}>Изменить</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDeleteRequest(keyword.id)} disabled={isSubmitting} className="text-red-600 hover:text-red-700 hover:bg-red-50">Удалить</Button>
+
+                  <Input
+                    className="flex-grow"
+                    value={synonymInputs[keyword.id] || ''}
+                    onChange={(e) => handleSynonymInputChange(keyword.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleAddSynonym(keyword.id); }
+                    }}
+                    placeholder="Добавьте синоним"
+                    disabled={!!synonymSaving[keyword.id]}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleAddSynonym(keyword.id)}
+                    isLoading={!!synonymSaving[keyword.id]}
+                    disabled={(synonymInputs[keyword.id] || '').trim().length < 2 || !!synonymSaving[keyword.id]}
+                    className="shrink-0"
+                  >
+                    Добавить
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleDeleteRequest(keyword.id)} 
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
+                  >
+                    Удалить
+                  </Button>
+                </div>
+
+                <div className="pl-2">
+                  <div className="flex justify-between items-center mt-2">
+                    <div className="flex flex-wrap gap-2">
+                      {keyword.keyword_synonyms && keyword.keyword_synonyms.length > 0 ? (
+                        keyword.keyword_synonyms.map((synonym) => (
+                          <span
+                            key={synonym.id}
+                            className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
+                          >
+                            {synonym.synonym}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSynonym(keyword.id, synonym.id)}
+                              className="text-gray-400 hover:text-red-600 focus:outline-none"
+                              disabled={!!synonymDeleting[synonym.id]}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 shrink-0">
+                      Создано: {formatDateLocaleRu(keyword.created_at || '')}
+                    </div>
                   </div>
                 </div>
               </Card>
             ))}
           </div>
         )}
-
-        {renderAddEditModals()}
 
         <ConfirmationModal 
           isOpen={isConfirmingDelete}
@@ -332,4 +388,3 @@ export function KeywordEditorModal({ isOpen, onClose, category, categories, keyw
     </Modal>
   )
 }
-
