@@ -1,8 +1,11 @@
 import { redirect } from 'next/navigation'
 
 import { createServerClient } from '@/lib/supabase/server'
-import { CategoriesManager } from '@/components/categories/CategoriesManager'
 import { StickyPageHeaderWrapper } from '@/components/layout/StickyPageHeaderWrapper'
+import { getAllKeywords } from '@/lib/actions/keywords'
+import { getUserSettings } from '@/lib/actions/settings'
+import { CategoriesPageClient } from './CategoriesPageClient'
+import { normalizeKeywords } from '@/lib/utils'
 
 export default async function CategoriesPage() {
   const supabase = await createServerClient()
@@ -14,18 +17,20 @@ export default async function CategoriesPage() {
 
   const userId = user.id
 
-  // Параллельно получаем категории и группы для оптимизации
-  const [categoriesResult, groupsResult] = await Promise.all([
+  // Параллельно получаем все необходимые данные
+  const [categoriesResult, groupsResult, keywordsResult, settingsResult] = await Promise.all([
     supabase
       .from('categories')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false }),
+      .order('sort_order', { ascending: true, nullsFirst: false }),
     supabase
       .from('category_groups')
       .select('*')
       .eq('user_id', userId)
-      .order('sort_order', { ascending: true })
+      .order('sort_order', { ascending: true }),
+    getAllKeywords(),
+    getUserSettings(),
   ])
 
   return (
@@ -36,9 +41,11 @@ export default async function CategoriesPage() {
       />
 
       <div className="container mx-auto px-4 pt-4 pb-8">
-        <CategoriesManager
+        <CategoriesPageClient
           initialCategories={categoriesResult.data || []}
           initialGroups={groupsResult.data || []}
+          initialKeywords={normalizeKeywords(keywordsResult.data || [])}
+          initialSettings={settingsResult.settings || {}}
         />
       </div>
     </div>

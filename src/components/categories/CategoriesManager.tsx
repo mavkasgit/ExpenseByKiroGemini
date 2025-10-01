@@ -10,6 +10,7 @@ import { getAllKeywords } from '@/lib/actions/keywords'
 import { getUserSettings, UserSettings } from '@/lib/actions/settings'
 import { Preset } from '@/lib/presets'
 import { applyPreset } from '@/lib/actions/presets'
+import { normalizeKeywords } from '@/lib/utils'
 
 import { GroupsManager } from './GroupsManager'
 import { PresetPicker } from './PresetPicker'
@@ -25,8 +26,10 @@ import { KeywordEditorModal } from './KeywordEditorModal'
 
 
 interface CategoriesManagerProps {
-  initialGroups: CategoryGroup[]
-  initialCategories: Category[]
+  initialGroups: CategoryGroup[];
+  initialCategories: Category[];
+  initialKeywords: CategoryKeywordWithSynonyms[];
+  initialSettings: UserSettings;
 }
 
 export type CategoryWithKeywordCount = Category & { keywordCount: number };
@@ -35,17 +38,7 @@ export type CategoryGroupWithCategories = CategoryGroup & {
   categories: CategoryWithKeywordCount[];
 };
 
-const normalizeKeywords = (
-  keywords: any[] = [],
-): CategoryKeywordWithSynonyms[] =>
-  keywords.map((keyword) => ({
-    ...keyword,
-    keyword_synonyms: (keyword.keyword_synonyms || []).map((synonym: Partial<KeywordSynonym>) => ({
-      ...synonym,
-      keyword_id: (synonym as KeywordSynonym).keyword_id ?? keyword.id ?? null,
-      user_id: (synonym as KeywordSynonym).user_id ?? keyword.user_id ?? null,
-    })),
-  })) as CategoryKeywordWithSynonyms[];
+
 
 const buildGroupsWithCategories = (
   allGroups: CategoryGroup[], 
@@ -89,13 +82,26 @@ const buildGroupsWithCategories = (
   return finalGroups;
 };
 
-export function CategoriesManager({ initialGroups, initialCategories }: CategoriesManagerProps) {
-  const [groups, setGroups] = useState<CategoryGroupWithCategories[]>([])
+export function CategoriesManager({ 
+  initialGroups, 
+  initialCategories, 
+  initialKeywords, 
+  initialSettings 
+}: CategoriesManagerProps) {
   const [categories, setCategories] = useState<Category[]>(initialCategories)
-  const [allKeywords, setAllKeywords] = useState<CategoryKeywordWithSynonyms[]>([]);
-  const [userSettings, setUserSettings] = useState<UserSettings>({});
+  const [allKeywords, setAllKeywords] = useState<CategoryKeywordWithSynonyms[]>(() => normalizeKeywords(initialKeywords));
+  const [userSettings, setUserSettings] = useState<UserSettings>(initialSettings);
+  
+  const [groups, setGroups] = useState<CategoryGroupWithCategories[]>(() => {
+    const initialKwCountMap = new Map<string, number>();
+    normalizeKeywords(initialKeywords).forEach(kw => {
+        if(kw.category_id) initialKwCountMap.set(kw.category_id, (initialKwCountMap.get(kw.category_id) || 0) + 1);
+    });
+    return buildGroupsWithCategories(initialGroups, initialCategories, initialKwCountMap);
+  });
+
   const [activeGroup, setActiveGroup] = useState<CategoryGroup | null>(null)
-  const [activeCategory, setActiveCategory] = useState<Category | null>(null)
+  const [activeCategory, setActiveCategory] = useState<CategoryWithKeywordCount | null>(null)
   const [draggedItemWidth, setDraggedItemWidth] = useState<number | null>(null); // New state
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
@@ -119,26 +125,14 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   }, [allKeywords]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const [keywordsResult, settingsResult] = await Promise.all([
-        getAllKeywords(),
-        getUserSettings()
-      ]);
-      
-      if (keywordsResult.success) {
-        setAllKeywords(normalizeKeywords(keywordsResult.data || []));
-      }
-      if (settingsResult.settings) {
-        setUserSettings(settingsResult.settings);
-      }
-    };
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    setGroups(buildGroupsWithCategories(initialGroups, initialCategories, keywordCountByCategory));
-    setCategories(initialCategories);
-  }, [initialGroups, initialCategories, keywordCountByCategory]);
+    setGroups(currentGroups => currentGroups.map(group => ({
+        ...group,
+        categories: group.categories.map(category => ({
+            ...category,
+            keywordCount: keywordCountByCategory.get(category.id) || 0
+        }))
+    })));
+  }, [keywordCountByCategory]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -157,7 +151,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
     if (active.data.current?.type === 'category') {
-      setActiveCategory(active.data.current.category)
+      setActiveCategory(active.data.current.category as CategoryWithKeywordCount)
     }
     if (active.data.current?.type === 'group') {
       setActiveGroup(active.data.current.group)
@@ -170,18 +164,14 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
     setActiveGroup(null);
     setActiveCategory(null);
-    setDraggedItemWidth(null); // Reset width
+    setDraggedItemWidth(null);
 
     if (!over) {
       return;
     }
 
-    // Handle group sorting
-    if (active.data.current?.type === 'group' && over && active.id !== over.id) {
-      if (over.id === 'uncategorized') {
-        return; // Prevent dropping onto the uncategorized group
-      }
-
+    // Handle Group Sorting
+    if (active.data.current?.type === 'group' && over.data.current?.type === 'group' && active.id !== over.id) {
       const oldIndex = groups.findIndex(g => g.id === active.id);
       const newIndex = groups.findIndex(g => g.id === over.id);
       
@@ -190,7 +180,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         setGroups(newOrder);
         
         const groupsToUpdate = newOrder
-          .filter(g => g.id !== 'uncategorized') // Exclude uncategorized group from DB update
+          .filter(g => g.id !== 'uncategorized')
           .map((g, i) => ({ id: g.id, sort_order: i }));
 
         updateGroupOrder(groupsToUpdate);
@@ -198,21 +188,16 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
       return;
     }
 
-    // Handle category sorting
+    // Handle Category Sorting
     if (active.data.current?.type === 'category') {
-      const activeCategory = active.data.current.category as Category;
-      const sourceGroupId = activeCategory.category_group_id;
-
-      const overId = over.id.toString();
+      const sourceGroupId = active.data.current.category.category_group_id;
       const overData = over.data.current;
       
-      let destGroupId: string | null = null;
-      if (over.id.toString().startsWith('group-')) { // Dropped on a DroppableGroup
-          destGroupId = over.id.toString().replace('group-', '');
-      } else if (overData?.type === 'category') { // Dropped on a CategoryCard
-          destGroupId = overData.category.category_group_id;
-      } else if (overData?.type === 'group') { // This case might not happen if using DroppableGroup
-          destGroupId = over.id.toString();
+      let destGroupId = sourceGroupId;
+      if (over.id.toString().startsWith('group-')) {
+        destGroupId = over.id.toString().replace('group-', '');
+      } else if (overData?.type === 'category') {
+        destGroupId = overData.category.category_group_id;
       }
 
       if (!destGroupId) return;
@@ -222,32 +207,25 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
 
       if (!sourceGroup || !destGroup) return;
 
-      // Moving within the same group
+      const oldIndex = sourceGroup.categories.findIndex(c => c.id === active.id);
+      let newIndex = overData?.type === 'category' ? destGroup.categories.findIndex(c => c.id === over.id) : destGroup.categories.length;
+
       if (sourceGroupId === destGroupId) {
-        if (active.id === over.id) return;
-        const oldIndex = sourceGroup.categories.findIndex(c => c.id === active.id);
-        const newIndex = destGroup.categories.findIndex(c => c.id === over.id);
+        // Sorting within the same group
+        if (oldIndex === newIndex || oldIndex === -1 || newIndex === -1) return;
         
-        if (oldIndex !== -1 && newIndex !== -1) {
-            const reorderedCategories = arrayMove(sourceGroup.categories, oldIndex, newIndex);
-            const newGroups = groups.map(g => g.id === sourceGroupId ? {...g, categories: reorderedCategories} : g);
-            setGroups(newGroups);
-            updateCategoryOrderInGroup(reorderedCategories.map((c, i) => ({ id: c.id, order: i })));
-        }
-      } else { // Moving to a different group
-        const activeIndex = sourceGroup.categories.findIndex(c => c.id === active.id);
-        if (activeIndex === -1) return;
+        const reorderedCategories = arrayMove(sourceGroup.categories, oldIndex, newIndex);
+        const newGroups = groups.map(g => g.id === sourceGroupId ? {...g, categories: reorderedCategories} : g);
+        setGroups(newGroups);
+        updateCategoryOrderInGroup(reorderedCategories.map((c, i) => ({ id: c.id, order: i })));
 
-        const [movedCategory] = sourceGroup.categories.splice(activeIndex, 1);
+      } else {
+        // Moving to a different group
+        if (oldIndex === -1) return;
+
+        const [movedCategory] = sourceGroup.categories.splice(oldIndex, 1);
         movedCategory.category_group_id = destGroupId;
-
-        let overIndex = destGroup.categories.length; // Default to end
-        if (overData?.type === 'category') {
-            overIndex = destGroup.categories.findIndex(c => c.id === over.id);
-            if (overIndex === -1) overIndex = destGroup.categories.length;
-        }
-        
-        destGroup.categories.splice(overIndex, 0, movedCategory);
+        destGroup.categories.splice(newIndex, 0, movedCategory);
 
         const newGroups = groups.map(g => {
             if (g.id === sourceGroupId) return sourceGroup;
@@ -402,7 +380,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Управление категориями</h2>
         <div className="flex gap-2">
-          <Button onClick={openGroupModalForCreate}>Создать группу</Button>
+          <Button onClick={openGroupModalForCreate}>Управление группами</Button>
           <Button onClick={openCategoryModalForCreate} variant="primary">+ Создать категорию</Button>
         </div>
       </div>
@@ -414,6 +392,7 @@ export function CategoriesManager({ initialGroups, initialCategories }: Categori
         onGroupUpdated={handleGroupUpdated}
         editingGroup={editingGroup}
         onSuccess={() => setIsGroupModalOpen(false)}
+        initialGroups={groups}
       />
 
       <Modal

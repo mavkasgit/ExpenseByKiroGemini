@@ -142,27 +142,21 @@ export type Database = {
       category_keywords: {
         Row: {
           category_id: string | null
-          confidence_score: number | null
           created_at: string | null
-          cyrillic_keyword: string | null
           id: string
           keyword: string
           user_id: string | null
         }
         Insert: {
           category_id?: string | null
-          confidence_score?: number | null
           created_at?: string | null
-          cyrillic_keyword?: string | null
           id?: string
           keyword: string
           user_id?: string | null
         }
         Update: {
           category_id?: string | null
-          confidence_score?: number | null
           created_at?: string | null
-          cyrillic_keyword?: string | null
           id?: string
           keyword?: string
           user_id?: string | null

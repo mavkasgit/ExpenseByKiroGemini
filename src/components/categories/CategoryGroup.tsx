@@ -10,14 +10,16 @@ import { Category, CategoryGroup as TCategoryGroup } from '@/types'
 import { availableIcons } from '@/lib/utils/category-constants'
 import { memo } from 'react'
 
+import { CategoryWithKeywordCount } from './CategoriesManager';
+
 interface CategoryGroupProps {
-  group: TCategoryGroup & { categories: Category[] }
+  group: TCategoryGroup & { categories: CategoryWithKeywordCount[] }
   onEditGroup: (group: TCategoryGroup) => void
   onDeleteGroup: (groupId: string) => void
-  onEditCategory: (category: Category) => void
-  onKeywordsCategory: (category: Category) => void
+  onEditCategory: (category: CategoryWithKeywordCount) => void
+  onKeywordsCategory: (category: CategoryWithKeywordCount) => void
   onDeleteCategory: (categoryId: string) => Promise<void>;
-  activeCategory: Category | null
+  activeCategory: CategoryWithKeywordCount | null
   style?: React.CSSProperties
   isOverlay?: boolean
   isGroupDragging?: boolean

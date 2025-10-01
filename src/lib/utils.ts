@@ -59,3 +59,17 @@ export function formatDate(date: string | Date, options: FormatDateOptions = {})
     ...formatOptions
   }).format(dateInstance)
 }
+
+import type { CategoryKeywordWithSynonyms, KeywordSynonym } from "@/types"
+
+export const normalizeKeywords = (
+  keywords: any[] = [],
+): CategoryKeywordWithSynonyms[] =>
+  keywords.map((keyword) => ({
+    ...keyword,
+    keyword_synonyms: (keyword.keyword_synonyms || []).map((synonym: Partial<KeywordSynonym>) => ({
+      ...synonym,
+      keyword_id: (synonym as KeywordSynonym).keyword_id ?? keyword.id ?? null,
+      user_id: (synonym as KeywordSynonym).user_id ?? keyword.user_id ?? null,
+    })),
+  })) as CategoryKeywordWithSynonyms[];

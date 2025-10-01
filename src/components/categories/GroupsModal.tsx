@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Button, Input, Modal, useToast } from '@/components/ui'
@@ -21,9 +21,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover
   onGroupUpdated: (updatedGroup: CategoryGroup) => void
   editingGroup?: CategoryGroup | null; // Make it optional as it's not always passed
   onSuccess: () => void
+  initialGroups: CategoryGroup[];
 }
 
-export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGroupUpdated }: GroupsModalProps) {
+export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGroupUpdated, initialGroups }: GroupsModalProps) {
   const [groups, setGroups] = useState<CategoryGroup[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
@@ -32,6 +33,7 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
   const [newGroupIcon, setNewGroupIcon] = useState('other')
   const [newGroupColor, setNewGroupColor] = useState('#6b7280')
   const [iconSearch, setIconSearch] = useState('')
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
   const [groupToDelete, setGroupToDelete] = useState<CategoryGroup | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -55,9 +57,19 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
 
   useEffect(() => {
     if (isOpen) {
-      loadGroups();
+      setGroups(initialGroups);
+      setIsLoading(false);
     }
-  }, [isOpen, loadGroups]);
+  }, [isOpen, initialGroups]);
+
+  const filteredGroups = useMemo(() => {
+    if (!groupSearchQuery) {
+      return groups;
+    }
+    return groups.filter(group =>
+      group.name.toLowerCase().includes(groupSearchQuery.toLowerCase())
+    );
+  }, [groupSearchQuery, groups]);
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
@@ -160,8 +172,22 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
     <Modal isOpen={isOpen} onClose={handleClose} title="Управление группами" size="lg">
       <div className="space-y-4">
         {!isCreating && (
-          <div className="flex justify-end">
-            <Button onClick={() => {
+          <div className="flex items-center gap-4">
+            <Input
+              className="flex-grow h-10"
+              value={groupSearchQuery}
+              onChange={(e) => setGroupSearchQuery(e.target.value)}
+              placeholder="Поиск по группам..."
+              leftIcon={
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+              }
+              autoComplete="new-password"
+            />
+            <Button 
+              className="h-10 whitespace-nowrap"
+              onClick={() => {
               setIsCreating(true);
               setNewGroupName('');
               setNewGroupColor(getRandomColor());
@@ -238,13 +264,13 @@ export function GroupsModal({ isOpen, onClose, onSuccess, onGroupCreated, onGrou
         <div className="min-h-[200px]">
           {isLoading ? (
             <div className="text-center py-8">Загрузка...</div>
-          ) : groups.length === 0 && !isCreating ? (
-            <div className="text-center py-8 text-gray-500">Нет созданных групп.</div>
+          ) : filteredGroups.length === 0 && !isCreating ? (
+            <div className="text-center py-8 text-gray-500">{groupSearchQuery ? 'Группы не найдены' : 'Нет созданных групп.'}</div>
           ) : (
             <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={filteredGroups.map(g => g.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-2">
-                  {groups.map((group) => (
+                  {filteredGroups.map((group) => (
                     <SortableGroupItem 
                       key={group.id} 
                       group={group} 

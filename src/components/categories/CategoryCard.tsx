@@ -12,9 +12,9 @@ import { CategoryWithKeywordCount } from './CategoriesManager'
 
 interface CategoryCardProps {
   category: CategoryWithKeywordCount
-  onEdit?: (category: Category) => void
+  onEdit?: (category: CategoryWithKeywordCount) => void
   onDelete?: (categoryId: string) => void
-  onKeywords?: (category: Category) => void
+  onKeywords?: (category: CategoryWithKeywordCount) => void
   isDraggable?: boolean
   isOverlay?: boolean
 }
@@ -76,7 +76,7 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
           </button>
         )}
         {category.keywordCount > 0 && (
-          <span className="text-xs font-bold text-gray-500 bg-gray-200 rounded-full px-2 py-0.5">
+          <span className="text-sm font-extrabold text-gray-600 bg-gray-200 rounded-full px-3 py-1">
             {category.keywordCount}
           </span>
         )}
@@ -97,7 +97,7 @@ function CategoryCardComponent({ category, onEdit, onDelete, onKeywords, isDragg
   );
 
   if (isOverlay) {
-    return <div style={{ backgroundColor: category.color ? `${category.color}20` : '#f3f4f6' }} className="rounded-lg p-3 shadow-lg flex items-center">{cardContent}</div>;
+    return <div style={{ backgroundColor: category.color ? `${category.color}20` : '#f3f4f6' }} className="rounded-lg p-3 shadow-2xl flex items-center scale-105 rotate-1">{cardContent}</div>;
   }
 
   return (

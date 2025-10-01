@@ -4,17 +4,17 @@ import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { CategoryGroup } from './CategoryGroup'
 import { Category, CategoryGroup as TCategoryGroup } from '@/types'
 
-import type { CategoryGroupWithCategories } from '@/components/categories/CategoriesManager';
+import type { CategoryGroupWithCategories, CategoryWithKeywordCount } from '@/components/categories/CategoriesManager';
 
 interface GroupsManagerProps {
   groups: CategoryGroupWithCategories[]
   handleEditGroup: (group: TCategoryGroup) => void
   handleDeleteGroup: (groupId: string) => void
-  handleEditCategory: (category: Category) => void
-  handleKeywordsCategory: (category: Category) => void
+  handleEditCategory: (category: CategoryWithKeywordCount) => void
+  handleKeywordsCategory: (category: CategoryWithKeywordCount) => void
   handleDeleteCategory: (categoryId: string) => Promise<void>;
   activeGroup: TCategoryGroup | null
-  activeCategory: Category | null
+  activeCategory: CategoryWithKeywordCount | null
   isGroupDragging: boolean
 }
 
